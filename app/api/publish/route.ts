@@ -3,6 +3,39 @@ import fs from "fs"
 import path from "path"
 
 const memoryPath = path.join(process.cwd(), "data", "seo-memory.json")
+const BASE_URL = `https://api.base44.com/api/apps/${process.env.BASE44_APP_ID}/entities`
+
+function getEntityConfig(page: any): { entity: string; body: Record<string, any> } {
+  const { content, page_type, cluster_id, pillar_id } = page
+
+  switch (page_type) {
+    case "pillar":
+      return {
+        entity: "PillarPage",
+        body: { ...content, cluster_id: cluster_id || "default", is_active: true },
+      }
+    case "secondary":
+      return {
+        entity: "SecondaryPage",
+        body: {
+          ...content,
+          cluster_id: cluster_id || "default",
+          pillar_id: pillar_id || "default",
+          is_active: true,
+        },
+      }
+    case "blog":
+      return {
+        entity: "BlogPost",
+        body: { ...content, is_active: true, related_blog_ids: [] },
+      }
+    default:
+      return {
+        entity: "PillarPage",
+        body: { ...content, cluster_id: "default", is_active: true },
+      }
+  }
+}
 
 export async function POST(req: NextRequest) {
   const { page_id } = await req.json()
@@ -14,33 +47,25 @@ export async function POST(req: NextRequest) {
   }
 
   const page = memory.pending_approval[pageIndex]
-  const { content } = page
+  const { entity, body } = getEntityConfig(page)
 
-  const base44Res = await fetch(
-    `https://api.base44.com/api/apps/${process.env.BASE44_APP_ID}/entities/Pages`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.BASE44_API_KEY!,
-      },
-      body: JSON.stringify({
-        title: content.h1,
-        slug: content.slug,
-        metaTitle: content.meta_title,
-        metaDescription: content.meta_description,
-        htmlContent: buildHtml(content),
-        status: "published",
-        keyword: page.keyword,
-      }),
-    }
-  )
+  const base44Res = await fetch(`${BASE_URL}/${entity}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.BASE44_API_KEY!,
+    },
+    body: JSON.stringify(body),
+  })
 
   if (!base44Res.ok) {
-    return Response.json({ error: "Error publicando en Base44" }, { status: 500 })
+    const errText = await base44Res.text().catch(() => base44Res.statusText)
+    return Response.json({ error: `Base44 error: ${errText}` }, { status: 500 })
   }
 
-  await fetch(`https://api.vercel.com/v1/deployments`, {
+  const base44Data = await base44Res.json()
+
+  await fetch("https://api.vercel.com/v1/deployments", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
@@ -49,23 +74,16 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({ name: process.env.VERCEL_PROJECT_ID }),
   })
 
-  memory.published.push({ ...page, status: "published", published_at: new Date().toISOString() })
+  memory.published.push({
+    ...page,
+    status: "published",
+    entity,
+    base44_id: base44Data._id || base44Data.id,
+    published_at: new Date().toISOString(),
+  })
   memory.pending_approval.splice(pageIndex, 1)
   memory.last_updated = new Date().toISOString()
   fs.writeFileSync(memoryPath, JSON.stringify(memory, null, 2))
 
-  return Response.json({ success: true, page })
-}
-
-function buildHtml(content: any): string {
-  let html = `<h1>${content.h1}</h1>\n<p>${content.intro}</p>\n`
-  content.sections?.forEach((s: any) => {
-    html += `<h2>${s.h2}</h2>\n<p>${s.content}</p>\n`
-  })
-  html += `<h2>Preguntas Frecuentes</h2>\n`
-  content.faq?.forEach((f: any) => {
-    html += `<h3>${f.question}</h3>\n<p>${f.answer}</p>\n`
-  })
-  html += `<div class="cta">${content.cta}</div>`
-  return html
+  return Response.json({ success: true, entity, page })
 }
