@@ -1,27 +1,40 @@
 import { NextRequest } from "next/server"
-import fs from "fs"
-import path from "path"
+import { readMemory, writeMemory } from "@/lib/memory"
 
-const memoryPath = path.join(process.cwd(), "data", "seo-memory.json")
+const BASE = "https://wetracking.co"
 
 export async function GET() {
-  const memory = JSON.parse(fs.readFileSync(memoryPath, "utf-8"))
-  return Response.json({
-    strategy: memory.sitemap_strategy,
-    published: memory.published.map((p: any) => ({
-      url: `https://wetracking.co/${p.content.slug}`,
+  try {
+    const memory = readMemory()
+    const published = (memory.published || []).map((p: any) => ({
+      url: `${BASE}/${p.content?.slug || ""}`,
       keyword: p.keyword,
+      page_type: p.page_type,
+      entity: p.entity,
+      cluster_id: p.cluster_id,
       lastmod: p.published_at,
-      priority: p.page_type === "pillar" ? "0.9" : "0.7"
+      priority: p.page_type === "pillar" ? "0.9" : p.page_type === "secondary" ? "0.7" : "0.6",
     }))
-  })
+    return Response.json({
+      sitemap_url: `${BASE}/sitemap.xml`,
+      total: published.length,
+      strategy: memory.sitemap_strategy,
+      published,
+    })
+  } catch (e: any) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json()
-  const memory = JSON.parse(fs.readFileSync(memoryPath, "utf-8"))
-  memory.sitemap_strategy = body.strategy
-  memory.last_updated = new Date().toISOString()
-  fs.writeFileSync(memoryPath, JSON.stringify(memory, null, 2))
-  return Response.json({ success: true })
+  try {
+    const body = await req.json()
+    const memory = readMemory()
+    memory.sitemap_strategy = body.strategy
+    memory.last_updated = new Date().toISOString()
+    writeMemory(memory)
+    return Response.json({ success: true })
+  } catch (e: any) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
 }

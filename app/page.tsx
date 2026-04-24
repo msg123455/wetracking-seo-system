@@ -63,17 +63,20 @@ export default function SEOCommandCenter() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const [kRes, pRes, sRes, cRes] = await Promise.all([
-      fetch("/api/keywords"),
-      fetch("/api/pending"),
-      fetch("/api/sitemap"),
-      fetch("/api/clusters"),
-    ])
-    setKeywords(await kRes.json())
-    setPending(await pRes.json())
-    const sData = await sRes.json()
-    setSitemap(sData.published || [])
-    setClusters(await cRes.json())
+    try {
+      const [kRes, pRes, sRes, cRes] = await Promise.all([
+        fetch("/api/keywords"),
+        fetch("/api/pending"),
+        fetch("/api/sitemap"),
+        fetch("/api/clusters"),
+      ])
+      if (kRes.ok) setKeywords(await kRes.json())
+      if (pRes.ok) setPending(await pRes.json())
+      if (sRes.ok) { const d = await sRes.json(); setSitemap(d.published || []) }
+      if (cRes.ok) setClusters(await cRes.json())
+    } catch (e) {
+      console.error("loadData error:", e)
+    }
   }
 
   function notify(text: string, type: "success" | "error" | "info" = "info") {
@@ -81,13 +84,29 @@ export default function SEOCommandCenter() {
   }
 
   async function addKeyword() {
-    if (!newKeyword.trim()) return
+    const kw = newKeyword.trim()
+    if (!kw) return
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword: kw }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error al guardar")
+      setNewKeyword("")
+      loadData()
+    } catch (e: any) {
+      notify(`Error al agregar keyword: ${e.message}`, "error")
+    }
+  }
+
+  async function deleteKeyword(id: string) {
     await fetch("/api/keywords", {
-      method: "POST",
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword: newKeyword }),
+      body: JSON.stringify({ id }),
     })
-    setNewKeyword("")
     loadData()
   }
 
@@ -245,9 +264,14 @@ export default function SEOCommandCenter() {
                     <Badge text={k.intent} />
                     <Badge text={k.difficulty} />
                   </div>
-                  <button onClick={() => { setGenKeyword(k.keyword); setTab("generate") }} style={btnCyan}>
-                    → Generar página
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => { setGenKeyword(k.keyword); setTab("generate") }} style={btnCyan}>
+                      → Generar página
+                    </button>
+                    <button onClick={() => deleteKeyword(k.id)} style={{ padding: "6px 11px", background: "#fff0f0", color: "#dc3545", border: "1px solid #f5c2c7", borderRadius: 7, cursor: "pointer", fontSize: 12 }}>
+                      ✕
+                    </button>
+                  </div>
                 </div>
               ))
             }
@@ -440,30 +464,75 @@ export default function SEOCommandCenter() {
         {/* ─── TAB: SITEMAP / PUBLICADAS ─── */}
         {tab === "sitemap" && (
           <div>
-            <h2 style={h2}>Páginas Publicadas en Base44</h2>
+            <h2 style={h2}>Sitemap & Páginas Publicadas</h2>
+
+            {/* Sitemap URL banner */}
+            <div style={{ background: "#0b194f", borderRadius: 12, padding: "18px 24px", marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ color: "#00ffd7", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Sitemap XML activo</div>
+                <code style={{ color: "white", fontSize: 14, fontFamily: "monospace" }}>https://wetracking.co/sitemap.xml</code>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer"
+                  style={{ padding: "8px 16px", background: "rgba(255,255,255,0.15)", color: "white", borderRadius: 8, fontSize: 13, textDecoration: "none", fontWeight: 600 }}>
+                  Ver local ↗
+                </a>
+                <a href="https://wetracking.co/sitemap.xml" target="_blank" rel="noopener noreferrer"
+                  style={{ padding: "8px 16px", background: "#00ffd7", color: "#0b194f", borderRadius: 8, fontSize: 13, textDecoration: "none", fontWeight: 700 }}>
+                  Ver producción ↗
+                </a>
+              </div>
+            </div>
+
+            {/* Páginas estáticas siempre incluidas */}
+            <div style={{ background: "white", borderRadius: 12, border: "1px solid #eee", marginBottom: 20, overflow: "hidden" }}>
+              <div style={{ padding: "12px 20px", background: "#f8f9fa", borderBottom: "1px solid #eee" }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#0b194f" }}>Páginas estáticas (siempre incluidas)</span>
+              </div>
+              {[
+                { url: "https://wetracking.co", priority: "1.0", freq: "weekly" },
+                { url: "https://wetracking.co/soluciones", priority: "0.9", freq: "monthly" },
+                { url: "https://wetracking.co/industrias", priority: "0.8", freq: "monthly" },
+                { url: "https://wetracking.co/contacto", priority: "0.8", freq: "monthly" },
+                { url: "https://wetracking.co/blog", priority: "0.7", freq: "weekly" },
+                { url: "https://wetracking.co/nosotros", priority: "0.7", freq: "monthly" },
+              ].map((s, i) => (
+                <div key={i} style={{ padding: "10px 20px", borderBottom: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#007aed", fontSize: 13 }}>{s.url}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <span style={{ ...badgeStyle2, background: "#f0fff4", color: "#28a745" }}>p{s.priority}</span>
+                    <span style={{ ...badgeStyle2 }}>{s.freq}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Páginas dinámicas publicadas */}
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#0b194f", marginBottom: 12 }}>
+              Páginas dinámicas publicadas ({sitemap.length})
+            </div>
             {sitemap.length === 0
               ? <Empty text="Sin páginas publicadas. Aprueba páginas desde Pendientes." />
-              : sitemap.map((s, i) => {
-                const typeInfo = PAGE_TYPE_LABELS[s.entity?.toLowerCase().replace("page", "").replace("post", "") ?? "pillar"]
-                return (
-                  <div key={i} style={{ ...card, flexDirection: "column", alignItems: "flex-start", gap: 4, marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
-                      <span style={{ fontWeight: 600, color: "#0b194f", fontSize: 14 }}>{s.keyword}</span>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {s.entity && <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#f0f0f0", color: "#555" }}>{s.entity}</span>}
-                        <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#f0fff4", color: "#28a745" }}>p{s.priority}</span>
-                      </div>
+              : sitemap.map((s, i) => (
+                <div key={i} style={{ ...card, flexDirection: "column", alignItems: "flex-start", gap: 4, marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                    <span style={{ fontWeight: 600, color: "#0b194f", fontSize: 14 }}>{s.keyword}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {s.entity && <span style={badgeStyle2}>{s.entity}</span>}
+                      <span style={{ ...badgeStyle2, background: "#f0fff4", color: "#28a745" }}>p{s.priority}</span>
                     </div>
-                    <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "#007aed", fontSize: 13 }}>{s.url}</a>
-                    <span style={{ color: "#bbb", fontSize: 12 }}>Publicado: {new Date(s.lastmod).toLocaleDateString("es-CO")}</span>
                   </div>
-                )
-              })
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: "#007aed", fontSize: 13 }}>{s.url}</a>
+                  <span style={{ color: "#bbb", fontSize: 12 }}>Publicado: {new Date(s.lastmod).toLocaleDateString("es-CO")}</span>
+                </div>
+              ))
             }
-            <div style={{ marginTop: 20, background: "white", padding: 18, borderRadius: 10, border: "1px solid #eee" }}>
-              <p style={{ margin: 0, color: "#666", fontSize: 13 }}>
-                Sitemap XML autogenerado en <code style={codeStyle}>wetracking.co/sitemap.xml</code>
-              </p>
+
+            <div style={{ marginTop: 20, background: "#fffbea", padding: 16, borderRadius: 10, border: "1px solid #ffe082", fontSize: 13, color: "#7a5c00" }}>
+              <strong>¿Cómo funciona?</strong> El archivo <code style={codeStyle}>app/sitemap.ts</code> genera automáticamente
+              el XML cuando Next.js recibe una petición a <code style={codeStyle}>/sitemap.xml</code>.
+              Cada vez que publicas una página aquí, se incluye automáticamente en el sitemap de wetracking.co.
+              Envía la URL a Google Search Console para indexación prioritaria.
             </div>
           </div>
         )}
@@ -610,4 +679,9 @@ const btnBlue: React.CSSProperties = {
 const btnCyan: React.CSSProperties = {
   padding: "7px 16px", background: "#00ffd7", color: "#0b194f",
   border: "none", borderRadius: 20, cursor: "pointer", fontWeight: 700, fontSize: 13,
+}
+
+const badgeStyle2: React.CSSProperties = {
+  display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11,
+  fontWeight: 600, background: "#f0f0f0", color: "#666",
 }
