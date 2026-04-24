@@ -7,6 +7,8 @@ const DEFAULT: Record<string, any> = {
   keywords: [],
   pages: [],
   clusters: [],
+  research: [],
+  youtube_scripts: [],
   sitemap_strategy: [],
   pending_approval: [],
   published: [],

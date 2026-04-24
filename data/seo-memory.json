@@ -1,20 +1,11 @@
 {
-  "keywords": [
-    {
-      "id": "1776995489217",
-      "keyword": "test RFID",
-      "volume": "unknown",
-      "difficulty": "medium",
-      "intent": "informational",
-      "assigned_page": null,
-      "status": "pending",
-      "created_at": "2026-04-24T01:51:29.217Z"
-    }
-  ],
+  "keywords": [],
   "pages": [],
   "clusters": [],
+  "research": [],
+  "youtube_scripts": [],
   "sitemap_strategy": [],
   "pending_approval": [],
   "published": [],
-  "last_updated": "2026-04-24T01:51:29.217Z"
+  "last_updated": ""
 }

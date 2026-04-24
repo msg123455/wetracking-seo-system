@@ -86,16 +86,37 @@ Todo en español latinoamericano.`
 
 export async function POST(req: NextRequest) {
   try {
-    const { keyword, page_type, industry, cluster_id, pillar_id } = await req.json()
+    const { keyword, page_type, industry, cluster_id, pillar_id, research_id } = await req.json()
 
     if (!keyword?.trim()) {
       return Response.json({ error: "keyword es requerido" }, { status: 400 })
     }
 
+    // Enrich prompt with Perplexity research if provided
+    let researchContext = ""
+    if (research_id) {
+      const memory = readMemory()
+      const r = (memory.research || []).find((x: any) => x.id === research_id)
+      if (r) {
+        researchContext =
+          `\n\nCONTEXTO DE INVESTIGACIÓN (usa estos datos en el contenido):\n` +
+          `Resumen: ${r.data.summary}\n` +
+          `Hechos clave: ${r.data.key_facts?.join(" | ")}\n` +
+          `Estadísticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
+          `Oportunidades SEO: ${r.data.seo_opportunities?.join(" | ")}\n`
+      }
+    }
+
+    const basePrompt = buildPrompt(keyword, page_type, industry)
+    const finalPrompt = researchContext ? basePrompt.replace(
+      "DEVUELVE SOLO JSON",
+      `${researchContext}\nDEVUELVE SOLO JSON`
+    ) : basePrompt
+
     const message = await client.messages.create({
       model: "claude-opus-4-5",
       max_tokens: 4000,
-      messages: [{ role: "user", content: buildPrompt(keyword, page_type, industry) }],
+      messages: [{ role: "user", content: finalPrompt }],
     })
 
     const raw = message.content[0].type === "text" ? message.content[0].text : ""
