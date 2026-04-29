@@ -22,6 +22,16 @@ function getEntityConfig(page: any): { entity: string; body: Record<string, any>
           is_active: true,
         },
       }
+    case "third":
+      return {
+        entity: "SecondaryPage",
+        body: {
+          ...content,
+          cluster_id: cluster_id || "default",
+          pillar_id: pillar_id || "default",
+          is_active: true,
+        },
+      }
     case "blog":
       return {
         entity: "BlogPost",
@@ -64,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     const base44Data = await base44Res.json()
 
-    // Trigger Vercel redeploy (best-effort, don't fail if this errors)
+    // Trigger Vercel redeploy (best-effort)
     fetch("https://api.vercel.com/v1/deployments", {
       method: "POST",
       headers: {

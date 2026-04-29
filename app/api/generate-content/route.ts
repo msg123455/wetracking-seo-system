@@ -61,6 +61,29 @@ DEVUELVE SOLO JSON sin markdown con esta estructura exacta:
 Reglas: content_sections 3-4 elementos alternando heading2/paragraph. Todo en español latinoamericano.`
   }
 
+  if (page_type === "third") {
+    return `Eres un experto en SEO. ${ctx}
+
+Genera contenido para una Third-Level Page (página de detalle específico) sobre: "${keyword}"
+Esta página profundiza en un subtema concreto dentro de la arquitectura de contenido.
+
+DEVUELVE SOLO JSON sin markdown con esta estructura exacta:
+{
+  "slug": "slug-en-kebab-case",
+  "title": "H1 principal máximo 60 caracteres",
+  "meta_description": "Meta description máximo 160 caracteres",
+  "content_sections": [
+    { "type": "heading2", "content": "Texto del H2", "alt_text": "" },
+    { "type": "paragraph", "content": "Párrafo de 150-200 palabras muy específico y técnico", "alt_text": "" },
+    { "type": "heading2", "content": "Segundo H2", "alt_text": "" },
+    { "type": "paragraph", "content": "Párrafo de 150-200 palabras con datos concretos", "alt_text": "" }
+  ],
+  "cta_text": "Contacta a WeTracking y descubre cómo nuestra solución RFID se adapta a tu empresa."
+}
+
+Reglas: 3-4 content_sections, enfoque técnico y específico, una sola intención de búsqueda. Todo en español latinoamericano.`
+  }
+
   // blog
   return `Eres un experto en SEO y content marketing. ${ctx}
 
@@ -114,7 +137,7 @@ export async function POST(req: NextRequest) {
     ) : basePrompt
 
     const message = await client.messages.create({
-      model: "claude-opus-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       messages: [{ role: "user", content: finalPrompt }],
     })

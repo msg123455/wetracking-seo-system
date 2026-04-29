@@ -10,6 +10,8 @@ const DEFAULT: Record<string, any> = {
   research: [],
   youtube_scripts: [],
   sitemap_strategy: [],
+  sitemaps: [],
+  sitemap_nodes: [],
   pending_approval: [],
   published: [],
   last_updated: "",

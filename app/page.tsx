@@ -16,25 +16,43 @@ type Page = {
 }
 type SitemapEntry = { url: string; keyword: string; lastmod: string; priority: string; entity?: string }
 
-type Tab = "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "sitemap"
+type SitemapNode = {
+  id: string; sitemap_id: string; url: string; keyword: string
+  page_type: string; depth: number; parent_id: string | null
+  status: "draft" | "generated" | "published"; page_id: string | null; created_at: string
+}
+type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
+
+type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published"
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
   pillar:    { label: "Pillar",    color: "#6f42c1", bg: "#f3eeff" },
   secondary: { label: "Secondary", color: "#007aed", bg: "#e8f4fd" },
+  third:     { label: "Third",     color: "#0d9488", bg: "#e0f7f5" },
   blog:      { label: "Blog",      color: "#fd7e14", bg: "#fff3e8" },
 }
 
 export default function SEOCommandCenter() {
-  const [tab, setTab] = useState<Tab>("keywords")
+  const [tab, setTab] = useState<Tab>("sitemapbuild")
 
   // data
   const [keywords,     setKeywords]     = useState<Keyword[]>([])
   const [clusters,     setClusters]     = useState<Cluster[]>([])
   const [pending,      setPending]      = useState<Page[]>([])
-  const [sitemap,      setSitemap]      = useState<SitemapEntry[]>([])
+  const [publishedSM,  setPublishedSM]  = useState<SitemapEntry[]>([])
   const [research,     setResearch]     = useState<Research[]>([])
   const [ytScripts,    setYtScripts]    = useState<YTScript[]>([])
   const [aeoItems,     setAeoItems]     = useState<AEOItem[]>([])
+
+  // sitemap builder data
+  const [sitemapDefs,     setSitemapDefs]     = useState<SitemapDef[]>([])
+  const [sitemapNodes,    setSitemapNodes]    = useState<SitemapNode[]>([])
+  const [activeSitemapId, setActiveSitemapId] = useState<string | null>(null)
+  const [showCreateForm,  setShowCreateForm]  = useState(false)
+  const [smName,          setSmName]          = useState("")
+  const [smKeyword,       setSmKeyword]       = useState("")
+  const [smIndustry,      setSmIndustry]      = useState("logistica y bodegas")
+  const [smText,          setSmText]          = useState("")
 
   // form – keywords
   const [newKeyword,   setNewKeyword]   = useState("")
@@ -50,7 +68,7 @@ export default function SEOCommandCenter() {
 
   // form – generate
   const [genKeyword,   setGenKeyword]   = useState("")
-  const [genType,      setGenType]      = useState<"pillar"|"secondary"|"blog">("pillar")
+  const [genType,      setGenType]      = useState<"pillar"|"secondary"|"third"|"blog">("pillar")
   const [genIndustry,  setGenIndustry]  = useState("RFID general")
   const [genCluster,   setGenCluster]   = useState("")
   const [genPillar,    setGenPillar]    = useState("")
@@ -81,18 +99,26 @@ export default function SEOCommandCenter() {
 
   async function loadData() {
     try {
-      const [kR, pR, sR, cR, rR, yR, aR] = await Promise.all([
+      const [kR, pR, sR, cR, rR, yR, aR, sbR] = await Promise.all([
         fetch("/api/keywords"), fetch("/api/pending"), fetch("/api/sitemap"),
         fetch("/api/clusters"), fetch("/api/research"), fetch("/api/youtube-script"),
-        fetch("/api/aeo"),
+        fetch("/api/aeo"), fetch("/api/sitemap-builder"),
       ])
       if (kR.ok) setKeywords(await kR.json())
       if (pR.ok) setPending(await pR.json())
-      if (sR.ok) { const d = await sR.json(); setSitemap(d.published || []) }
+      if (sR.ok) { const d = await sR.json(); setPublishedSM(d.published || []) }
       if (cR.ok) setClusters(await cR.json())
       if (rR.ok) setResearch(await rR.json())
       if (yR.ok) setYtScripts(await yR.json())
       if (aR.ok) setAeoItems(await aR.json())
+      if (sbR.ok) {
+        const d = await sbR.json()
+        setSitemapDefs(d.sitemaps || [])
+        setSitemapNodes(d.nodes || [])
+        if (!activeSitemapId && d.sitemaps?.length > 0) {
+          setActiveSitemapId(d.sitemaps[0].id)
+        }
+      }
     } catch (e) { console.error("loadData:", e) }
   }
 
@@ -133,8 +159,60 @@ export default function SEOCommandCenter() {
     try {
       const r = await fetch("/api/research", { method:"POST", headers:jsonHdr, body: JSON.stringify({ topic:resTopic, depth:resDepth }) })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`✓ Investigación completada: "${resTopic}"`, "success")
+      notify(`Investigacion completada: "${resTopic}"`, "success")
       setResTopic(""); loadData()
+    } catch (e: any) { notify("Error: " + e.message, "error") }
+    setLoading(false)
+  }
+
+  // ── Sitemap Builder ──
+  async function parseSitemap() {
+    if (!smName.trim() || !smKeyword.trim() || !smText.trim()) {
+      notify("Completa nombre, keyword raiz y estructura del sitemap", "error"); return
+    }
+    setLoading(true); notify("Analizando estructura con Claude...", "info")
+    try {
+      const r = await fetch("/api/sitemap-builder", {
+        method:"POST", headers:jsonHdr,
+        body: JSON.stringify({ action:"parse", name:smName, root_keyword:smKeyword, industry:smIndustry, structure_text:smText }),
+      })
+      const d = await r.json(); if (!r.ok) throw new Error(d.error)
+      notify(`Sitemap creado: ${d.nodes.length} paginas detectadas`, "success")
+      setActiveSitemapId(d.sitemap.id)
+      setShowCreateForm(false)
+      setSmName(""); setSmKeyword(""); setSmText("")
+      loadData()
+    } catch (e: any) { notify("Error: " + e.message, "error") }
+    setLoading(false)
+  }
+
+  async function deleteSitemap(sitemapId: string) {
+    await fetch("/api/sitemap-builder", { method:"DELETE", headers:jsonHdr, body: JSON.stringify({ sitemap_id: sitemapId }) })
+    if (activeSitemapId === sitemapId) setActiveSitemapId(null)
+    loadData()
+  }
+
+  async function generateFromNode(node: SitemapNode) {
+    const activeSitemap = sitemapDefs.find(s => s.id === node.sitemap_id)
+    setLoading(true); notify(`Generando "${node.keyword}"...`, "info")
+    try {
+      const r = await fetch("/api/generate-content", {
+        method:"POST", headers:jsonHdr,
+        body: JSON.stringify({
+          keyword: node.keyword,
+          page_type: node.page_type,
+          industry: activeSitemap?.industry || "RFID general",
+          cluster_id: "default",
+          pillar_id: "default",
+        }),
+      })
+      const d = await r.json(); if (!r.ok) throw new Error(d.error)
+      await fetch("/api/sitemap-builder", {
+        method:"PATCH", headers:jsonHdr,
+        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: d.id }),
+      })
+      notify(`Contenido listo para "${node.keyword}" — ver en Pendientes`, "success")
+      loadData()
     } catch (e: any) { notify("Error: " + e.message, "error") }
     setLoading(false)
   }
@@ -151,7 +229,7 @@ export default function SEOCommandCenter() {
           research_id:genResearch||undefined }),
       })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`✓ Contenido generado para "${genKeyword}"`, "success")
+      notify(`Contenido generado para "${genKeyword}"`, "success")
       setGenKeyword(""); setTab("pending"); loadData()
     } catch (e: any) { notify("Error: " + e.message, "error") }
     setLoading(false)
@@ -168,7 +246,7 @@ export default function SEOCommandCenter() {
       })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
       setImgPreview(d.url)
-      notify(`✓ Imagen generada: ${d.url}`, "success")
+      notify(`Imagen generada: ${d.url}`, "success")
       if (imgPageId) { setImgDesc(""); loadData() }
     } catch (e: any) { notify("Error Gemini: " + e.message, "error") }
     setLoading(false)
@@ -184,7 +262,7 @@ export default function SEOCommandCenter() {
         body: JSON.stringify({ keyword:ytKeyword, page_type:ytType, industry:ytIndustry, page_id:ytPageId||undefined }),
       })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`✓ Script generado: "${d.script.video_title}"`, "success")
+      notify(`Script generado: "${d.script.video_title}"`, "success")
       setYtKeyword(""); loadData()
     } catch (e: any) { notify("Error: " + e.message, "error") }
     setLoading(false)
@@ -196,7 +274,7 @@ export default function SEOCommandCenter() {
     try {
       const r = await fetch("/api/aeo", { method:"POST", headers:jsonHdr, body: JSON.stringify({ page_id }) })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify("✓ AEO optimizado — direct_answer, schema FAQ y citation blocks generados", "success")
+      notify("AEO optimizado — direct_answer, schema FAQ y citation blocks generados", "success")
       loadData()
     } catch (e: any) { notify("Error AEO: " + e.message, "error") }
     setLoading(false)
@@ -208,7 +286,7 @@ export default function SEOCommandCenter() {
     try {
       const r = await fetch("/api/publish", { method:"POST", headers:jsonHdr, body: JSON.stringify({ page_id:id }) })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`✓ Publicado en Base44 (${d.entity})`, "success"); loadData()
+      notify(`Publicado en Base44 (${d.entity})`, "success"); loadData()
     } catch (e: any) { notify("Error publicando: " + e.message, "error") }
     setLoading(false)
   }
@@ -217,18 +295,35 @@ export default function SEOCommandCenter() {
     loadData()
   }
 
+  // ── Sitemap tree rendering ──
+  const activeSitemap = sitemapDefs.find(s => s.id === activeSitemapId) || null
+  const activeNodes = sitemapNodes
+    .filter(n => n.sitemap_id === activeSitemapId)
+    .sort((a, b) => a.url.localeCompare(b.url))
+
+  const nodeStats = {
+    pillar:    activeNodes.filter(n => n.page_type === "pillar").length,
+    secondary: activeNodes.filter(n => n.page_type === "secondary").length,
+    third:     activeNodes.filter(n => n.page_type === "third").length,
+    blog:      activeNodes.filter(n => n.page_type === "blog").length,
+    draft:     activeNodes.filter(n => n.status === "draft").length,
+    generated: activeNodes.filter(n => n.status === "generated").length,
+    published: activeNodes.filter(n => n.status === "published").length,
+  }
+
   // ─────────────────────────────────────────────────
   // TAB BAR
   // ─────────────────────────────────────────────────
   const TABS: { key: Tab; label: string; count?: number; dot?: boolean }[] = [
-    { key:"keywords", label:"Keywords",    count:keywords.length },
-    { key:"research", label:"Research",    count:research.length, dot: research.length > 0 },
-    { key:"generate", label:"Generar" },
-    { key:"pending",  label:"Pendientes",  count:pending.length, dot: pending.length > 0 },
-    { key:"youtube",  label:"YouTube",     count:ytScripts.length },
-    { key:"aeo",      label:"AEO ⚡",       count:aeoItems.filter(a=>a.aeo).length },
-    { key:"clusters", label:"Clusters",    count:clusters.length },
-    { key:"sitemap",  label:"Publicadas",  count:sitemap.length },
+    { key:"sitemapbuild", label:"Estructura",   count: sitemapDefs.length },
+    { key:"keywords",     label:"Keywords",     count: keywords.length },
+    { key:"research",     label:"Research",     count: research.length },
+    { key:"generate",     label:"Generar" },
+    { key:"pending",      label:"Pendientes",   count: pending.length, dot: pending.length > 0 },
+    { key:"youtube",      label:"YouTube",      count: ytScripts.length },
+    { key:"aeo",          label:"AEO",          count: aeoItems.filter(a=>a.aeo).length },
+    { key:"clusters",     label:"Clusters",     count: clusters.length },
+    { key:"published",    label:"Publicadas",   count: publishedSM.length },
   ]
 
   return (
@@ -240,7 +335,7 @@ export default function SEOCommandCenter() {
         <span style={{ color:"rgba(255,255,255,0.3)" }}>|</span>
         <span style={{ color:"white", fontWeight:600, fontSize:16 }}>SEO Command Center</span>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
-          {[["Keywords",keywords.length],["Pendientes",pending.length,true],["Research",research.length],["YouTube",ytScripts.length],["AEO",aeoItems.filter(a=>a.aeo).length],["Publicadas",sitemap.length]].map(([l,v,hi]:any) => (
+          {[["Sitemaps",sitemapDefs.length],["Keywords",keywords.length],["Pendientes",pending.length,true],["Research",research.length],["YouTube",ytScripts.length],["Publicadas",publishedSM.length]].map(([l,v,hi]:any) => (
             <div key={l} style={{ textAlign:"center", background:"rgba(255,255,255,0.1)", borderRadius:7, padding:"4px 11px" }}>
               <div style={{ color: hi && v>0 ? "#00ffd7" : "rgba(255,255,255,0.55)", fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>{l}</div>
               <div style={{ color:"white", fontWeight:800, fontSize:17, lineHeight:1.2 }}>{v}</div>
@@ -249,15 +344,15 @@ export default function SEOCommandCenter() {
         </div>
       </div>
 
-      {/* ── Notificación ── */}
+      {/* ── Notificacion ── */}
       {message && (
         <div style={{ background: message.type==="success"?"#d4edda":message.type==="error"?"#f8d7da":"#fff3cd", padding:"9px 28px", borderBottom:"1px solid #ddd", color:"#333", fontSize:13, display:"flex", justifyContent:"space-between" }}>
           <span>{message.text}</span>
-          <button onClick={()=>setMessage(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:18,lineHeight:1 }}>×</button>
+          <button onClick={()=>setMessage(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:18,lineHeight:1 }}>x</button>
         </div>
       )}
 
-      {/* ── Tabs (scrollable) ── */}
+      {/* ── Tabs ── */}
       <div style={{ background:"white", borderBottom:"2px solid #eee", overflowX:"auto", whiteSpace:"nowrap", scrollbarWidth:"none" }}>
         <div style={{ display:"inline-flex", padding:"0 24px" }}>
           {TABS.map(t => (
@@ -275,7 +370,162 @@ export default function SEOCommandCenter() {
       </div>
 
       {/* ── Contenido ── */}
-      <div style={{ padding:28, maxWidth:960, margin:"0 auto" }}>
+      <div style={{ padding:28, maxWidth:980, margin:"0 auto" }}>
+
+        {/* ══ SITEMAP BUILDER ══ */}
+        {tab==="sitemapbuild" && (
+          <div>
+            <h2 style={H2}>Estructura SEO — Sitemap Builder</h2>
+            <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
+              Define la arquitectura de contenido. Claude detecta automaticamente cada URL como Pillar, Secondary, Third o Blog.
+              Desde aqui puedes generar el contenido de cada pagina directamente.
+            </p>
+
+            {/* Selector de sitemaps activos */}
+            {sitemapDefs.length > 0 && (
+              <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+                {sitemapDefs.map(sm => (
+                  <button key={sm.id} onClick={()=>setActiveSitemapId(sm.id)} style={{
+                    padding:"8px 18px", border:`2px solid ${activeSitemapId===sm.id?"#007aed":"#ddd"}`,
+                    borderRadius:8, cursor:"pointer", fontWeight:activeSitemapId===sm.id?700:400,
+                    color:activeSitemapId===sm.id?"#007aed":"#666", background:"white", fontSize:13,
+                    display:"flex", alignItems:"center", gap:8,
+                  }}>
+                    {sm.name}
+                    <span style={{ fontSize:11, color:"#aaa" }}>{sm.node_count} paginas</span>
+                  </button>
+                ))}
+                <button onClick={()=>setShowCreateForm(true)} style={{...BTN_BLUE, fontSize:12}}>
+                  + Nuevo sitemap
+                </button>
+              </div>
+            )}
+
+            {/* Form crear sitemap */}
+            {(showCreateForm || sitemapDefs.length === 0) && (
+              <div style={{ background:"white", padding:24, borderRadius:12, border:"2px dashed #007aed", marginBottom:24 }}>
+                <h3 style={{ margin:"0 0 18px", color:"#0b194f", fontSize:15 }}>
+                  {sitemapDefs.length === 0 ? "Crear primer sitemap" : "Nuevo sitemap"}
+                </h3>
+                <div style={{ display:"flex", gap:14 }}>
+                  <Field label="Nombre" style={{flex:1}}>
+                    <input value={smName} onChange={e=>setSmName(e.target.value)}
+                      placeholder="ej: Gestion de Inventarios" style={{...INP, width:"100%", boxSizing:"border-box"}} />
+                  </Field>
+                  <Field label="Keyword raiz" style={{flex:1}}>
+                    <input value={smKeyword} onChange={e=>setSmKeyword(e.target.value)}
+                      placeholder="ej: gestion de inventarios" style={{...INP, width:"100%", boxSizing:"border-box"}} />
+                  </Field>
+                  <Field label="Industria" style={{flex:1}}>
+                    <select value={smIndustry} onChange={e=>setSmIndustry(e.target.value)} style={SEL}>
+                      <option>logistica y bodegas</option><option>manufactura</option>
+                      <option>retail</option><option>salud</option><option>RFID general</option>
+                      <option>trazabilidad</option><option>activos fijos</option>
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Estructura del sitemap (pega el texto, cualquier formato)">
+                  <textarea
+                    value={smText} onChange={e=>setSmText(e.target.value)} rows={12}
+                    placeholder={`Ejemplo:\n/gestion-de-inventarios\n  /gestion-de-inventarios/beneficios\n    /gestion-de-inventarios/beneficios/impacto-financiero\n    /gestion-de-inventarios/beneficios/eficiencia-operativa\n  /gestion-de-inventarios/metodos\n    /gestion-de-inventarios/metodos/abc\n    /gestion-de-inventarios/metodos/fifo\nblog/gestion-de-inventarios/que-es-un-inventario\nblog/gestion-de-inventarios/metodos-de-inventario`}
+                    style={{ ...INP, width:"100%", boxSizing:"border-box", resize:"vertical", fontFamily:"monospace", fontSize:12, lineHeight:1.6 }}
+                  />
+                </Field>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={parseSitemap} disabled={loading||!smText.trim()||!smName.trim()} style={{
+                    ...BTN_BLUE, flex:1, padding:"13px", fontSize:15,
+                    opacity:loading||!smText.trim()||!smName.trim()?0.55:1,
+                    cursor:loading||!smText.trim()||!smName.trim()?"not-allowed":"pointer",
+                  }}>
+                    {loading?"Analizando con Claude...":"Analizar y crear sitemap"}
+                  </button>
+                  {showCreateForm && sitemapDefs.length > 0 && (
+                    <button onClick={()=>setShowCreateForm(false)} style={BTN_GHOST}>Cancelar</button>
+                  )}
+                </div>
+                <p style={{ color:"#bbb", fontSize:11, textAlign:"center", marginTop:8, marginBottom:0 }}>
+                  Claude detecta automaticamente: Pillar (profundidad 0), Secondary (1), Third (2), Blog (blog/)
+                </p>
+              </div>
+            )}
+
+            {/* Sitemap activo */}
+            {activeSitemap && activeNodes.length > 0 && (
+              <div>
+                {/* Stats */}
+                <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap" }}>
+                  {[
+                    { label:"Total", val:activeNodes.length, color:"#0b194f", bg:"#eef0f8" },
+                    { label:"Pillar", val:nodeStats.pillar, color:"#6f42c1", bg:"#f3eeff" },
+                    { label:"Secondary", val:nodeStats.secondary, color:"#007aed", bg:"#e8f4fd" },
+                    { label:"Third", val:nodeStats.third, color:"#0d9488", bg:"#e0f7f5" },
+                    { label:"Blog", val:nodeStats.blog, color:"#fd7e14", bg:"#fff3e8" },
+                    { label:"Generadas", val:nodeStats.generated, color:"#28a745", bg:"#e8f5e9" },
+                    { label:"Pendientes", val:nodeStats.draft, color:"#856404", bg:"#fff3cd" },
+                  ].map(s => (
+                    <div key={s.label} style={{ padding:"6px 14px", borderRadius:8, background:s.bg, textAlign:"center" }}>
+                      <div style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", color:s.color, letterSpacing:0.5 }}>{s.label}</div>
+                      <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</div>
+                    </div>
+                  ))}
+                  <div style={{ marginLeft:"auto", display:"flex", alignItems:"center" }}>
+                    <button onClick={()=>deleteSitemap(activeSitemap.id)} style={{ ...BTN_DEL, fontSize:12 }}>
+                      Eliminar sitemap
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tree */}
+                <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", overflow:"hidden" }}>
+                  <div style={{ padding:"12px 18px", background:"#f8f9fa", borderBottom:"1px solid #eee", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontWeight:700, fontSize:13, color:"#0b194f" }}>
+                      {activeSitemap.name} — {activeSitemap.root_keyword}
+                    </span>
+                    <span style={{ fontSize:12, color:"#aaa" }}>{activeSitemap.industry}</span>
+                  </div>
+                  <div style={{ padding:"8px 0" }}>
+                    {activeNodes.map(node => {
+                      const ti = PAGE_TYPE_COLORS[node.page_type] || PAGE_TYPE_COLORS.pillar
+                      const statusColor = node.status === "generated" ? "#28a745" : node.status === "published" ? "#007aed" : "#aaa"
+                      const statusBg = node.status === "generated" ? "#e8f5e9" : node.status === "published" ? "#e8f4fd" : "#f5f5f5"
+                      return (
+                        <div key={node.id} style={{
+                          display:"flex", alignItems:"center", gap:8,
+                          padding:"7px 18px",
+                          paddingLeft: 18 + node.depth * 22,
+                          borderLeft: node.depth > 0 ? undefined : undefined,
+                          borderBottom:"1px solid #f8f8f8",
+                          background: node.status === "generated" ? "#fafffe" : "white",
+                        }}>
+                          {node.depth > 0 && (
+                            <span style={{ color:"#ddd", fontSize:16, marginLeft:-(node.depth * 8) }}>└</span>
+                          )}
+                          <span style={{
+                            padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:700,
+                            background:ti.bg, color:ti.color, flexShrink:0, minWidth:58, textAlign:"center",
+                          }}>{ti.label}</span>
+                          <code style={{ fontSize:11, color:"#888", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{node.url}</code>
+                          <span style={{ flex:1, fontSize:12, color:"#0b194f", fontWeight:node.depth===0?700:400 }}>{node.keyword}</span>
+                          <span style={{ padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:600, background:statusBg, color:statusColor, flexShrink:0 }}>{node.status}</span>
+                          {node.status === "draft" && (
+                            <button onClick={()=>generateFromNode(node)} disabled={loading} style={{ ...BTN_CYAN, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
+                              Generar
+                            </button>
+                          )}
+                          {node.status === "generated" && node.page_id && (
+                            <button onClick={()=>{setTab("pending"); setExpandedPage(node.page_id)}} style={{ ...BTN_GHOST, padding:"4px 12px", fontSize:11, flexShrink:0 }}>
+                              Ver
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ══ KEYWORDS ══ */}
         {tab==="keywords" && (
@@ -283,7 +533,7 @@ export default function SEOCommandCenter() {
             <h2 style={H2}>Banco de Keywords</h2>
             <div style={{ display:"flex", gap:10, marginBottom:20 }}>
               <input value={newKeyword} onChange={e=>setNewKeyword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addKeyword()}
-                placeholder="ej: gestión de activos RFID Colombia" style={{...INP,flex:1}} />
+                placeholder="ej: gestion de activos RFID Colombia" style={{...INP,flex:1}} />
               <button onClick={addKeyword} style={BTN_BLUE}>Agregar</button>
             </div>
             {keywords.length===0 ? <Empty text="Sin keywords. Agrega la primera arriba." />
@@ -294,9 +544,9 @@ export default function SEOCommandCenter() {
                     <Bx>{k.intent}</Bx><Bx>{k.difficulty}</Bx>
                   </div>
                   <div style={{ display:"flex", gap:7 }}>
-                    <button onClick={()=>{setGenKeyword(k.keyword);setTab("generate")}} style={BTN_CYAN}>→ Generar</button>
+                    <button onClick={()=>{setGenKeyword(k.keyword);setTab("generate")}} style={BTN_CYAN}>Generar</button>
                     <button onClick={()=>{setResTopic(k.keyword);setTab("research")}} style={BTN_GHOST}>Investigar</button>
-                    <button onClick={()=>deleteKeyword(k.id)} style={BTN_DEL}>✕</button>
+                    <button onClick={()=>deleteKeyword(k.id)} style={BTN_DEL}>x</button>
                   </div>
                 </div>
               ))
@@ -304,20 +554,17 @@ export default function SEOCommandCenter() {
           </div>
         )}
 
-        {/* ══ RESEARCH (PERPLEXITY) ══ */}
+        {/* ══ RESEARCH ══ */}
         {tab==="research" && (
           <div>
-            <h2 style={H2}>Superagente de Investigación</h2>
+            <h2 style={H2}>Superagente de Investigacion</h2>
             <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
-              Usa Perplexity para investigar en tiempo real. El contexto se integra automáticamente en la generación de contenido.
+              Usa Perplexity para investigar en tiempo real. El contexto se integra automaticamente en la generacion de contenido.
             </p>
-            {!process.env.PERPLEXITY_API_KEY && (
-              <Tip type="warn">Agrega PERPLEXITY_API_KEY en .env.local para activar este módulo.</Tip>
-            )}
             <div style={{ background:"white", padding:22, borderRadius:12, border:"1px solid #eee", marginBottom:24 }}>
               <Field label="Tema a investigar">
                 <input value={resTopic} onChange={e=>setResTopic(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runResearch()}
-                  placeholder="ej: implementación RFID en bodegas logísticas Colombia 2025"
+                  placeholder="ej: implementacion RFID en bodegas logisticas Colombia 2025"
                   style={{...INP, width:"100%", boxSizing:"border-box"}} />
               </Field>
               <Field label="Profundidad">
@@ -327,7 +574,7 @@ export default function SEOCommandCenter() {
                       padding:"8px 22px", border:`2px solid ${resDepth===d?"#007aed":"#ddd"}`,
                       borderRadius:8, cursor:"pointer", fontWeight:resDepth===d?700:400,
                       color:resDepth===d?"#007aed":"#666", background:"white", fontSize:13,
-                    }}>{d==="basic"?"Básico (rápido)":"Profundo (detallado)"}</button>
+                    }}>{d==="basic"?"Basico (rapido)":"Profundo (detallado)"}</button>
                   ))}
                 </div>
               </Field>
@@ -336,7 +583,7 @@ export default function SEOCommandCenter() {
               </button>
             </div>
 
-            {research.length===0 ? <Empty text="Sin investigaciones. Corre tu primera búsqueda arriba." />
+            {research.length===0 ? <Empty text="Sin investigaciones. Corre tu primera busqueda arriba." />
               : research.map(r=>(
                 <div key={r.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:12, overflow:"hidden" }}>
                   <div style={{ padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -346,9 +593,9 @@ export default function SEOCommandCenter() {
                       <span style={{ color:"#bbb", fontSize:12, marginLeft:8 }}>{new Date(r.created_at).toLocaleDateString("es-CO")}</span>
                     </div>
                     <div style={{ display:"flex", gap:7 }}>
-                      <button onClick={()=>{setGenResearch(r.id);setGenKeyword(r.topic);setTab("generate")}} style={BTN_CYAN}>→ Usar en contenido</button>
+                      <button onClick={()=>{setGenResearch(r.id);setGenKeyword(r.topic);setTab("generate")}} style={BTN_CYAN}>Usar en contenido</button>
                       <button onClick={()=>setExpandedRes(expandedRes===r.id?null:r.id)} style={BTN_GHOST}>{expandedRes===r.id?"Cerrar":"Ver"}</button>
-                      <button onClick={async()=>{await fetch("/api/research",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:r.id})});loadData()}} style={BTN_DEL}>✕</button>
+                      <button onClick={async()=>{await fetch("/api/research",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:r.id})});loadData()}} style={BTN_DEL}>x</button>
                     </div>
                   </div>
                   {expandedRes===r.id && (
@@ -372,7 +619,6 @@ export default function SEOCommandCenter() {
           <div>
             <h2 style={H2}>Generar Contenido SEO</h2>
 
-            {/* Content generation form */}
             <div style={{ background:"white", padding:24, borderRadius:12, border:"1px solid #eee", marginBottom:20 }}>
               <h3 style={{ margin:"0 0 16px", color:"#0b194f", fontSize:15 }}>Contenido con Claude</h3>
               <Field label="Keyword objetivo">
@@ -381,11 +627,12 @@ export default function SEOCommandCenter() {
                   style={{...INP, width:"100%", boxSizing:"border-box"}} />
               </Field>
               <div style={{ display:"flex", gap:14 }}>
-                <Field label="Tipo → entidad Base44" style={{flex:1}}>
+                <Field label="Tipo de pagina" style={{flex:1}}>
                   <select value={genType} onChange={e=>setGenType(e.target.value as any)} style={SEL}>
-                    <option value="pillar">Pillar Page → PillarPage</option>
-                    <option value="secondary">Secondary Page → SecondaryPage</option>
-                    <option value="blog">Blog Post → BlogPost</option>
+                    <option value="pillar">Pillar Page (nivel 0)</option>
+                    <option value="secondary">Secondary Page (nivel 1)</option>
+                    <option value="third">Third Page (nivel 2)</option>
+                    <option value="blog">Blog Post</option>
                   </select>
                 </Field>
                 <Field label="Industria" style={{flex:1}}>
@@ -404,16 +651,16 @@ export default function SEOCommandCenter() {
                     {clusters.map(c=><button key={c.id} onClick={()=>setGenCluster(c.id)} style={{ padding:"2px 9px", border:"none", borderRadius:20, fontSize:11, cursor:"pointer", background:genCluster===c.id?"#0b194f":"#f0f0f0", color:genCluster===c.id?"white":"#555" }}>{c.name}</button>)}
                   </div>}
                 </Field>
-                {genType==="secondary" && (
+                {(genType==="secondary"||genType==="third") && (
                   <Field label="Pillar ID" style={{flex:1}}>
                     <input value={genPillar} onChange={e=>setGenPillar(e.target.value)} placeholder='Slug del pillar padre' style={{...INP, width:"100%", boxSizing:"border-box"}} />
                   </Field>
                 )}
               </div>
               {research.length>0 && (
-                <Field label="Usar investigación (opcional)">
+                <Field label="Usar investigacion (opcional)">
                   <select value={genResearch} onChange={e=>setGenResearch(e.target.value)} style={SEL}>
-                    <option value="">Sin investigación</option>
+                    <option value="">Sin investigacion</option>
                     {research.map(r=><option key={r.id} value={r.id}>{r.topic} ({r.depth})</option>)}
                   </select>
                 </Field>
@@ -421,20 +668,19 @@ export default function SEOCommandCenter() {
               <button onClick={generateContent} disabled={loading||!genKeyword.trim()} style={{...BTN_BLUE, width:"100%", padding:"13px", fontSize:15, opacity:loading||!genKeyword.trim()?0.55:1, cursor:loading||!genKeyword.trim()?"not-allowed":"pointer"}}>
                 {loading?"Generando con Claude...":"Generar contenido"}
               </button>
-              <p style={{ color:"#bbb", fontSize:11, textAlign:"center", marginTop:8, marginBottom:0 }}>claude-opus-4-5 · resultado va a Pendientes para revisión</p>
+              <p style={{ color:"#bbb", fontSize:11, textAlign:"center", marginTop:8, marginBottom:0 }}>claude-sonnet-4-6 · resultado va a Pendientes para revision</p>
             </div>
 
             {/* Image generation */}
             <div style={{ background:"white", padding:24, borderRadius:12, border:"1px solid #eee" }}>
               <h3 style={{ margin:"0 0 16px", color:"#0b194f", fontSize:15 }}>Generar Imagen con Gemini Imagen 3</h3>
-              {!process.env.GOOGLE_AI_API_KEY && <Tip type="warn">Agrega GOOGLE_AI_API_KEY en .env.local.</Tip>}
-              <Field label="Descripción de la imagen">
+              <Field label="Descripcion de la imagen">
                 <input value={imgDesc} onChange={e=>setImgDesc(e.target.value)}
-                  placeholder="ej: trabajadores en bodega usando lectores RFID en estanterías industriales"
+                  placeholder="ej: trabajadores en bodega usando lectores RFID en estanterias industriales"
                   style={{...INP, width:"100%", boxSizing:"border-box"}} />
               </Field>
               <div style={{ display:"flex", gap:14 }}>
-                <Field label="Aplicar a página (opcional)" style={{flex:1}}>
+                <Field label="Aplicar a pagina (opcional)" style={{flex:1}}>
                   <select value={imgPageId} onChange={e=>setImgPageId(e.target.value)} style={SEL}>
                     <option value="">Solo previsualizar</option>
                     {pending.filter(p=>p.page_type==="blog").map(p=><option key={p.id} value={p.id}>{p.content.title||p.keyword}</option>)}
@@ -466,8 +712,8 @@ export default function SEOCommandCenter() {
         {/* ══ PENDIENTES ══ */}
         {tab==="pending" && (
           <div>
-            <h2 style={H2}>Pendientes de Aprobación</h2>
-            {pending.length===0 ? <Empty text="Sin páginas pendientes. Genera contenido primero." />
+            <h2 style={H2}>Pendientes de Aprobacion</h2>
+            {pending.length===0 ? <Empty text="Sin paginas pendientes. Genera contenido primero." />
               : pending.map(p=>{
                 const ti = PAGE_TYPE_COLORS[p.page_type]||PAGE_TYPE_COLORS.pillar
                 const isExp = expandedPage===p.id
@@ -479,7 +725,7 @@ export default function SEOCommandCenter() {
                           <h3 style={{ margin:0, color:"#0b194f", fontSize:15 }}>{p.content?.title||p.keyword}</h3>
                           <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:ti.bg, color:ti.color }}>{ti.label}</span>
                           <Bx>{p.industry}</Bx>
-                          {p.aeo && <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:"#e8f5e9", color:"#2e7d32" }}>AEO ✓</span>}
+                          {p.aeo && <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:"#e8f5e9", color:"#2e7d32" }}>AEO ok</span>}
                         </div>
                         <p style={{ margin:"2px 0 0", color:"#999", fontSize:12 }}>
                           /{p.content?.slug}
@@ -490,9 +736,9 @@ export default function SEOCommandCenter() {
                       </div>
                       <div style={{ display:"flex", gap:6, flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end" }}>
                         <button onClick={()=>setExpandedPage(isExp?null:p.id)} style={BTN_GHOST}>{isExp?"Cerrar":"Ver"}</button>
-                        <button onClick={()=>optimizeAEO(p.id)} disabled={loading} style={{ ...BTN_GHOST, color:"#6f42c1", borderColor:"#d4b8ff" }} title="AEO — Optimizar para IAs">AEO ⚡</button>
+                        <button onClick={()=>optimizeAEO(p.id)} disabled={loading} style={{ ...BTN_GHOST, color:"#6f42c1", borderColor:"#d4b8ff" }}>AEO</button>
                         <button onClick={()=>rejectPage(p.id)} style={BTN_DEL}>Rechazar</button>
-                        <button onClick={()=>publishPage(p.id)} disabled={loading} style={{ ...BTN_CYAN, opacity:loading?0.55:1 }}>✓ Publicar</button>
+                        <button onClick={()=>publishPage(p.id)} disabled={loading} style={{ ...BTN_CYAN, opacity:loading?0.55:1 }}>Publicar</button>
                       </div>
                     </div>
                     {isExp && (
@@ -522,9 +768,6 @@ export default function SEOCommandCenter() {
         {tab==="youtube" && (
           <div>
             <h2 style={H2}>Scripts YouTube SEO</h2>
-            <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
-              Genera scripts de video optimizados para SEO. Los scripts refuerzan el posicionamiento de las páginas en wetracking.co y posicionan el canal de YouTube.
-            </p>
             <div style={{ background:"white", padding:24, borderRadius:12, border:"1px solid #eee", marginBottom:24 }}>
               <Field label="Keyword del video">
                 <input value={ytKeyword} onChange={e=>setYtKeyword(e.target.value)}
@@ -536,6 +779,7 @@ export default function SEOCommandCenter() {
                   <select value={ytType} onChange={e=>setYtType(e.target.value)} style={SEL}>
                     <option value="pillar">Basado en Pillar Page</option>
                     <option value="secondary">Basado en Secondary Page</option>
+                    <option value="third">Basado en Third Page</option>
                     <option value="blog">Basado en Blog Post</option>
                     <option value="demo">Demo de producto</option>
                     <option value="tutorial">Tutorial paso a paso</option>
@@ -548,14 +792,14 @@ export default function SEOCommandCenter() {
                   </select>
                 </Field>
               </div>
-              {pending.length>0||sitemap.length>0 ? (
-                <Field label="Vincular a página existente (opcional)">
+              {pending.length>0 && (
+                <Field label="Vincular a pagina existente (opcional)">
                   <select value={ytPageId} onChange={e=>setYtPageId(e.target.value)} style={SEL}>
-                    <option value="">Sin vinculación</option>
-                    <optgroup label="Pendientes">{pending.map(p=><option key={p.id} value={p.id}>{p.content.title||p.keyword} ({p.page_type})</option>)}</optgroup>
+                    <option value="">Sin vinculacion</option>
+                    {pending.map(p=><option key={p.id} value={p.id}>{p.content.title||p.keyword} ({p.page_type})</option>)}
                   </select>
                 </Field>
-              ) : null}
+              )}
               <button onClick={generateYTScript} disabled={loading||!ytKeyword.trim()} style={{...BTN_BLUE, width:"100%", padding:"13px", opacity:loading||!ytKeyword.trim()?0.55:1, cursor:loading||!ytKeyword.trim()?"not-allowed":"pointer", background:"#cc0000"}}>
                 {loading?"Generando script YouTube...":"Generar script con Claude"}
               </button>
@@ -574,12 +818,12 @@ export default function SEOCommandCenter() {
                       </div>
                       <div style={{ display:"flex", gap:7 }}>
                         <button onClick={()=>setExpandedYt(isExp?null:s.id)} style={BTN_GHOST}>{isExp?"Cerrar":"Ver script"}</button>
-                        <button onClick={async()=>{await fetch("/api/youtube-script",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:s.id})});loadData()}} style={BTN_DEL}>✕</button>
+                        <button onClick={async()=>{await fetch("/api/youtube-script",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:s.id})});loadData()}} style={BTN_DEL}>x</button>
                       </div>
                     </div>
                     {isExp && (
                       <div style={{ borderTop:"1px solid #f0f0f0", padding:"16px 20px", background:"#fafafa" }}>
-                        <PMeta label="Descripción YouTube" text={s.script.video_description} />
+                        <PMeta label="Descripcion YouTube" text={s.script.video_description} />
                         <div style={{ marginBottom:10 }}>
                           <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Tags</span>
                           <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:4 }}>
@@ -588,7 +832,7 @@ export default function SEOCommandCenter() {
                         </div>
                         <PMeta label="Hook (primeros 15s)" text={s.script.hook} />
                         <div style={{ marginTop:10 }}>
-                          <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Capítulos</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Capitulos</span>
                           {s.script.chapters?.map((c:any,i:number)=>(
                             <div key={i} style={{ marginTop:8, paddingLeft:12, borderLeft:"3px solid #cc0000" }}>
                               <p style={{ margin:0, fontWeight:700, fontSize:13, color:"#0b194f" }}>{c.timestamp} — {c.title}</p>
@@ -610,16 +854,16 @@ export default function SEOCommandCenter() {
         {/* ══ AEO ══ */}
         {tab==="aeo" && (
           <div>
-            <h2 style={H2}>AEO — Optimización para Motores de IA ⚡</h2>
+            <h2 style={H2}>AEO — Optimizacion para Motores de IA</h2>
             <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
-              Optimiza tus páginas para ChatGPT Search, Perplexity, Google AI Overviews, Gemini y Bing Copilot.
+              Optimiza tus paginas para ChatGPT Search, Perplexity, Google AI Overviews, Gemini y Bing Copilot.
               El sistema genera: direct answer, featured snippet, schema FAQ JSON-LD, citation blocks y LLM seed phrases.
             </p>
             <Tip type="info">
-              Después de optimizar: copia el <strong>schema_faq JSON-LD</strong> al head de la página en wetracking.co para máximo impacto en AI Overviews.
+              Despues de optimizar: copia el <strong>schema_faq JSON-LD</strong> al head de la pagina en wetracking.co para maximo impacto en AI Overviews.
             </Tip>
 
-            {aeoItems.length===0 ? <Empty text="Sin páginas. Genera y revisa contenido primero." />
+            {aeoItems.length===0 ? <Empty text="Sin paginas. Genera y revisa contenido primero." />
               : aeoItems.map(item=>{
                 const ti = PAGE_TYPE_COLORS[item.page_type]||PAGE_TYPE_COLORS.pillar
                 const isExp = expandedAeo===item.id
@@ -630,7 +874,7 @@ export default function SEOCommandCenter() {
                         <span style={{ fontWeight:700, color:"#0b194f" }}>{item.title||item.keyword}</span>
                         <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:ti.bg, color:ti.color, marginLeft:7 }}>{ti.label}</span>
                         {item.aeo
-                          ? <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:"#e8f5e9", color:"#2e7d32", marginLeft:6 }}>AEO optimizado ✓</span>
+                          ? <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:"#e8f5e9", color:"#2e7d32", marginLeft:6 }}>AEO optimizado</span>
                           : <span style={{ padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:"#fff3cd", color:"#856404", marginLeft:6 }}>Sin AEO</span>
                         }
                         <span style={{ marginLeft:8, fontSize:11, color:"#bbb" }}>{item.list}</span>
@@ -638,7 +882,7 @@ export default function SEOCommandCenter() {
                       <div style={{ display:"flex", gap:7 }}>
                         {item.aeo && <button onClick={()=>setExpandedAeo(isExp?null:item.id)} style={BTN_GHOST}>{isExp?"Cerrar":"Ver AEO"}</button>}
                         <button onClick={()=>optimizeAEO(item.id)} disabled={loading} style={{ ...BTN_BLUE, padding:"7px 14px", fontSize:12 }}>
-                          {item.aeo?"Re-optimizar ⚡":"Optimizar para IA ⚡"}
+                          {item.aeo?"Re-optimizar":"Optimizar para IA"}
                         </button>
                       </div>
                     </div>
@@ -647,9 +891,9 @@ export default function SEOCommandCenter() {
                         <AEOBlock label="Direct Answer (para citar)" text={item.aeo.direct_answer} accent="#007aed" />
                         <AEOBlock label="Featured Snippet (Google Position Zero)" text={item.aeo.featured_snippet} accent="#28a745" />
                         <div style={{ marginBottom:12 }}>
-                          <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Queries de IA que esta página responde</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Queries de IA que esta pagina responde</span>
                           {item.aeo.ai_queries?.map((q:string,i:number)=>(
-                            <div key={i} style={{ marginTop:4, padding:"4px 10px", background:"#f0f8ff", borderRadius:6, fontSize:12, color:"#333" }}>❓ {q}</div>
+                            <div key={i} style={{ marginTop:4, padding:"4px 10px", background:"#f0f8ff", borderRadius:6, fontSize:12, color:"#333" }}>{q}</div>
                           ))}
                         </div>
                         <div style={{ marginBottom:12 }}>
@@ -669,7 +913,7 @@ export default function SEOCommandCenter() {
                         </div>
                         <div>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                            <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Schema FAQ JSON-LD — Pegar en &lt;head&gt;</span>
+                            <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Schema FAQ JSON-LD</span>
                             <button onClick={()=>navigator.clipboard.writeText(`<script type="application/ld+json">\n${JSON.stringify(item.aeo.schema_faq,null,2)}\n</script>`)}
                               style={{ padding:"3px 10px", background:"#007aed", color:"white", border:"none", borderRadius:5, cursor:"pointer", fontSize:11 }}>
                               Copiar JSON-LD
@@ -717,23 +961,23 @@ export default function SEOCommandCenter() {
           </div>
         )}
 
-        {/* ══ SITEMAP / PUBLICADAS ══ */}
-        {tab==="sitemap" && (
+        {/* ══ PUBLICADAS ══ */}
+        {tab==="published" && (
           <div>
-            <h2 style={H2}>Sitemap & Páginas Publicadas</h2>
+            <h2 style={H2}>Paginas Publicadas</h2>
             <div style={{ background:"#0b194f", borderRadius:12, padding:"16px 22px", marginBottom:22, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
               <div>
                 <div style={{ color:"#00ffd7", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>Sitemap XML activo</div>
                 <code style={{ color:"white", fontSize:13 }}>https://wetracking.co/sitemap.xml</code>
               </div>
               <div style={{ display:"flex", gap:8 }}>
-                <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" style={{ padding:"7px 14px", background:"rgba(255,255,255,0.15)", color:"white", borderRadius:7, fontSize:12, textDecoration:"none", fontWeight:600 }}>Ver local ↗</a>
-                <a href="https://wetracking.co/sitemap.xml" target="_blank" rel="noopener noreferrer" style={{ padding:"7px 14px", background:"#00ffd7", color:"#0b194f", borderRadius:7, fontSize:12, textDecoration:"none", fontWeight:700 }}>Ver producción ↗</a>
+                <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" style={{ padding:"7px 14px", background:"rgba(255,255,255,0.15)", color:"white", borderRadius:7, fontSize:12, textDecoration:"none", fontWeight:600 }}>Ver local</a>
+                <a href="https://wetracking.co/sitemap.xml" target="_blank" rel="noopener noreferrer" style={{ padding:"7px 14px", background:"#00ffd7", color:"#0b194f", borderRadius:7, fontSize:12, textDecoration:"none", fontWeight:700 }}>Ver produccion</a>
               </div>
             </div>
             <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:18, overflow:"hidden" }}>
               <div style={{ padding:"11px 18px", background:"#f8f9fa", borderBottom:"1px solid #eee" }}>
-                <span style={{ fontWeight:700, fontSize:12, color:"#0b194f" }}>Páginas estáticas (siempre incluidas)</span>
+                <span style={{ fontWeight:700, fontSize:12, color:"#0b194f" }}>Paginas estaticas (siempre incluidas)</span>
               </div>
               {[{u:"https://wetracking.co",p:"1.0"},{u:"https://wetracking.co/soluciones",p:"0.9"},{u:"https://wetracking.co/industrias",p:"0.8"},{u:"https://wetracking.co/contacto",p:"0.8"},{u:"https://wetracking.co/blog",p:"0.7"},{u:"https://wetracking.co/nosotros",p:"0.7"}].map((s,i)=>(
                 <div key={i} style={{ padding:"9px 18px", borderBottom:"1px solid #f5f5f5", display:"flex", justifyContent:"space-between" }}>
@@ -742,9 +986,9 @@ export default function SEOCommandCenter() {
                 </div>
               ))}
             </div>
-            <div style={{ fontWeight:700, fontSize:13, color:"#0b194f", marginBottom:10 }}>Páginas dinámicas ({sitemap.length})</div>
-            {sitemap.length===0 ? <Empty text="Sin páginas publicadas." />
-              : sitemap.map((s,i)=>(
+            <div style={{ fontWeight:700, fontSize:13, color:"#0b194f", marginBottom:10 }}>Paginas dinamicas ({publishedSM.length})</div>
+            {publishedSM.length===0 ? <Empty text="Sin paginas publicadas." />
+              : publishedSM.map((s,i)=>(
                 <div key={i} style={{...CARD, flexDirection:"column", alignItems:"flex-start", gap:3, marginBottom:8}}>
                   <div style={{ display:"flex", justifyContent:"space-between", width:"100%" }}>
                     <span style={{ fontWeight:600, color:"#0b194f", fontSize:13 }}>{s.keyword}</span>
