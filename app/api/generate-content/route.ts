@@ -115,18 +115,34 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "keyword es requerido" }, { status: 400 })
     }
 
-    // Enrich prompt with Perplexity research if provided
+    // Enrich prompt with research if provided
     let researchContext = ""
     if (research_id) {
       const memory = readMemory()
       const r = (memory.research || []).find((x: any) => x.id === research_id)
       if (r) {
         researchContext =
-          `\n\nCONTEXTO DE INVESTIGACIÓN (usa estos datos en el contenido):\n` +
+          `\n\nCONTEXTO DE INVESTIGACION (usa estos datos en el contenido):\n` +
           `Resumen: ${r.data.summary}\n` +
           `Hechos clave: ${r.data.key_facts?.join(" | ")}\n` +
-          `Estadísticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
+          `Estadisticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
           `Oportunidades SEO: ${r.data.seo_opportunities?.join(" | ")}\n`
+
+        // If competitor analysis exists, inject it to generate better content
+        if (r.competitor_analysis) {
+          const ca = r.competitor_analysis
+          researchContext +=
+            `\nANALISIS COMPETITIVO (paginas que ya rankean en Google para este tema):\n` +
+            `Temas que todos cubren (obligatorio incluir): ${ca.temas_comunes?.join(" | ")}\n` +
+            `Content gaps (lo que nadie cubre bien — diferenciacion): ${ca.content_gaps?.join(" | ")}\n` +
+            `Angulos unicos WeTracking: ${ca.angulos_unicos_wetracking?.join(" | ")}\n` +
+            `Estructura recomendada H2s: ${ca.estructura_recomendada?.join(" | ")}\n` +
+            `Preguntas sin responder por competidores: ${ca.preguntas_sin_responder?.join(" | ")}\n` +
+            `Elementos de engagement a incluir: ${ca.elementos_engagement?.join(" | ")}\n` +
+            `\nINSTRUCCION CLAVE: Tu contenido debe cubrir los temas comunes de los competidores ` +
+            `Y ADEMAS explotar los content gaps. Usa la estructura recomendada de H2s. ` +
+            `Incluye los elementos de engagement listados. Sé mas especifico y util que cualquier competidor.\n`
+        }
       }
     }
 

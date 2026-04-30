@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 // ── Types ──
 type Keyword   = { id: string; keyword: string; volume: string; difficulty: string; intent: string }
 type Cluster   = { id: string; name: string; created_at: string }
-type Research  = { id: string; topic: string; depth: string; data: any; created_at: string }
+type Research  = { id: string; topic: string; depth: string; data: any; competitor_analysis?: any; sources_scraped?: number; created_at: string }
 type YTScript  = { id: string; keyword: string; page_type: string; page_id: string | null; script: any; created_at: string }
 type AEOItem   = { id: string; keyword: string; page_type: string; title: string; aeo: any | null; list: string }
 type ContentSection = { type: string; content: string; alt_text: string }
@@ -192,7 +192,7 @@ export default function SEOCommandCenter() {
     loadData()
   }
 
-  async function generateFromNode(node: SitemapNode) {
+  async function generateFromNode(node: SitemapNode, research_id?: string) {
     const activeSitemap = sitemapDefs.find(s => s.id === node.sitemap_id)
     setLoading(true); notify(`Generando "${node.keyword}"...`, "info")
     try {
@@ -204,6 +204,7 @@ export default function SEOCommandCenter() {
           industry: activeSitemap?.industry || "RFID general",
           cluster_id: "default",
           pillar_id: "default",
+          research_id: research_id || undefined,
         }),
       })
       const d = await r.json(); if (!r.ok) throw new Error(d.error)
@@ -212,6 +213,42 @@ export default function SEOCommandCenter() {
         body: JSON.stringify({ node_id: node.id, status: "generated", page_id: d.id }),
       })
       notify(`Contenido listo para "${node.keyword}" — ver en Pendientes`, "success")
+      loadData()
+    } catch (e: any) { notify("Error: " + e.message, "error") }
+    setLoading(false)
+  }
+
+  async function researchAndGenerate(node: SitemapNode) {
+    const activeSitemap = sitemapDefs.find(s => s.id === node.sitemap_id)
+    setLoading(true)
+    notify(`Investigando competidores para "${node.keyword}"...`, "info")
+    try {
+      // Step 1: Perplexity + scrape competitors
+      const rr = await fetch("/api/research", {
+        method:"POST", headers:jsonHdr,
+        body: JSON.stringify({ topic: node.keyword, depth: "basic" }),
+      })
+      const rd = await rr.json(); if (!rr.ok) throw new Error(rd.error)
+      notify(`Research listo (${rd.sources_scraped || 0} paginas analizadas). Generando contenido...`, "info")
+
+      // Step 2: Generate using research context
+      const gr = await fetch("/api/generate-content", {
+        method:"POST", headers:jsonHdr,
+        body: JSON.stringify({
+          keyword: node.keyword,
+          page_type: node.page_type,
+          industry: activeSitemap?.industry || "RFID general",
+          cluster_id: "default",
+          pillar_id: "default",
+          research_id: rd.id,
+        }),
+      })
+      const gd = await gr.json(); if (!gr.ok) throw new Error(gd.error)
+      await fetch("/api/sitemap-builder", {
+        method:"PATCH", headers:jsonHdr,
+        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: gd.id }),
+      })
+      notify(`Contenido listo para "${node.keyword}" con analisis de competidores`, "success")
       loadData()
     } catch (e: any) { notify("Error: " + e.message, "error") }
     setLoading(false)
@@ -507,7 +544,12 @@ export default function SEOCommandCenter() {
                           <code style={{ fontSize:11, color:"#888", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{node.url}</code>
                           <span style={{ flex:1, fontSize:12, color:"#0b194f", fontWeight:node.depth===0?700:400 }}>{node.keyword}</span>
                           <span style={{ padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:600, background:statusBg, color:statusColor, flexShrink:0 }}>{node.status}</span>
-                          {node.status === "draft" && (
+                          {node.status === "draft" && node.page_type === "secondary" && (
+                            <button onClick={()=>researchAndGenerate(node)} disabled={loading} style={{ ...BTN_BLUE, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
+                              Investigar + Generar
+                            </button>
+                          )}
+                          {node.status === "draft" && node.page_type !== "secondary" && (
                             <button onClick={()=>generateFromNode(node)} disabled={loading} style={{ ...BTN_CYAN, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
                               Generar
                             </button>
@@ -606,6 +648,29 @@ export default function SEOCommandCenter() {
                       <ResBlock label="Oportunidades SEO" items={r.data.seo_opportunities} />
                       <ResBlock label="Keywords relacionadas" items={r.data.related_keywords?.map((k:any)=>k.keyword+" ("+k.estimated_volume+")")} />
                       <ResBlock label="Preguntas frecuentes" items={r.data.common_questions} />
+                      {r.competitor_analysis && (
+                        <div style={{ marginTop:4, padding:"14px 16px", background:"#fff8e1", borderRadius:8, border:"1px solid #ffe082", display:"flex", flexDirection:"column", gap:10 }}>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#e65100", textTransform:"uppercase", letterSpacing:0.5 }}>
+                            Analisis competitivo — {r.sources_scraped} paginas reales analizadas
+                          </span>
+                          <ResBlock label="Temas que todos cubren (obligatorio)" items={r.competitor_analysis.temas_comunes} />
+                          <ResBlock label="Content gaps — lo que nadie responde bien" items={r.competitor_analysis.content_gaps} />
+                          <ResBlock label="Angulos unicos WeTracking" items={r.competitor_analysis.angulos_unicos_wetracking} />
+                          <ResBlock label="Estructura H2 recomendada" items={r.competitor_analysis.estructura_recomendada} />
+                          <ResBlock label="Preguntas sin responder por competidores" items={r.competitor_analysis.preguntas_sin_responder} />
+                          <ResBlock label="Elementos de engagement a incluir" items={r.competitor_analysis.elementos_engagement} />
+                          {r.data.sources?.length > 0 && (
+                            <div>
+                              <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Fuentes analizadas</span>
+                              <div style={{ display:"flex", flexDirection:"column", gap:3, marginTop:4 }}>
+                                {r.data.sources.map((s:string,i:number)=>(
+                                  <a key={i} href={s} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#007aed", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s}</a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
