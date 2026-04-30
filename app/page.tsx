@@ -1173,8 +1173,8 @@ function Empty({ text }: { text: string }) {
 // ── Styles ──
 const jsonHdr = { "Content-Type": "application/json" }
 const H2: React.CSSProperties = { color:"#0b194f", marginBottom:20, marginTop:0, fontSize:20 }
-const INP: React.CSSProperties = { padding:"9px 12px", borderRadius:7, border:"1px solid #ddd", fontSize:13 }
-const SEL: React.CSSProperties = { width:"100%", padding:"9px 12px", borderRadius:7, border:"1px solid #ddd", fontSize:13 }
+const INP: React.CSSProperties = { padding:"9px 12px", borderRadius:7, border:"1px solid #ddd", fontSize:13, color:"#1a1a1a", background:"white" }
+const SEL: React.CSSProperties = { width:"100%", padding:"9px 12px", borderRadius:7, border:"1px solid #ddd", fontSize:13, color:"#1a1a1a", background:"white" }
 const CARD: React.CSSProperties = { background:"white", padding:"12px 18px", borderRadius:10, border:"1px solid #eee", display:"flex", justifyContent:"space-between", alignItems:"center" }
 const CODE: React.CSSProperties = { background:"#f0f0f0", padding:"1px 5px", borderRadius:3, fontSize:11, fontFamily:"monospace" }
 const BTN_BLUE: React.CSSProperties  = { padding:"9px 20px", background:"#007aed", color:"white", border:"none", borderRadius:7, cursor:"pointer", fontWeight:600, fontSize:13 }
