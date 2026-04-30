@@ -447,18 +447,11 @@ export default function SEOCommandCenter() {
                 <div style={{ display:"flex", gap:14 }}>
                   <Field label="Nombre" style={{flex:1}}>
                     <input value={smName} onChange={e=>setSmName(e.target.value)}
-                      placeholder="ej: Gestion de Inventarios" style={{...INP, width:"100%", boxSizing:"border-box"}} />
+                      placeholder="ej: Trazabilidad WeTracking" style={{...INP, width:"100%", boxSizing:"border-box"}} />
                   </Field>
                   <Field label="Keyword raiz" style={{flex:1}}>
                     <input value={smKeyword} onChange={e=>setSmKeyword(e.target.value)}
-                      placeholder="ej: gestion de inventarios" style={{...INP, width:"100%", boxSizing:"border-box"}} />
-                  </Field>
-                  <Field label="Industria" style={{flex:1}}>
-                    <select value={smIndustry} onChange={e=>setSmIndustry(e.target.value)} style={SEL}>
-                      <option>logistica y bodegas</option><option>manufactura</option>
-                      <option>retail</option><option>salud</option><option>RFID general</option>
-                      <option>trazabilidad</option><option>activos fijos</option>
-                    </select>
+                      placeholder="ej: trazabilidad" style={{...INP, width:"100%", boxSizing:"border-box"}} />
                   </Field>
                 </div>
                 <Field label="Estructura del sitemap (pega el texto, cualquier formato)">
