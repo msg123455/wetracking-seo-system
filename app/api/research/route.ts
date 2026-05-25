@@ -69,12 +69,16 @@ DEVUELVE SOLO JSON sin markdown:
 
   const message = await claude.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    max_tokens: 4000,
     messages: [{ role: "user", content: prompt }],
   })
 
   const raw = message.content[0].type === "text" ? message.content[0].text : ""
-  return JSON.parse(raw.replace(/```json\n?|```/g, "").trim())
+  try {
+    return JSON.parse(raw.replace(/```json\n?|```/g, "").trim())
+  } catch {
+    return null
+  }
 }
 
 export async function GET() {
@@ -86,6 +90,34 @@ export async function GET() {
   }
 }
 
+async function fetchGooglePAA(topic: string): Promise<{ paa: string[]; related: string[] }> {
+  try {
+    const response = await perplexity.chat.completions.create({
+      model: "sonar-pro",
+      messages: [{
+        role: "user",
+        content: `Necesito saber qué aparece en Google cuando alguien busca "${topic}" en español.
+
+1. ¿Qué preguntas aparecen en "La gente también pregunta" (People Also Ask)?
+2. ¿Qué términos aparecen en las "Búsquedas relacionadas" al final de los resultados?
+
+Devuelve SOLO JSON sin markdown ni explicaciones:
+{"paa":["pregunta 1","pregunta 2","pregunta 3","pregunta 4","pregunta 5","pregunta 6"],"related":["búsqueda 1","búsqueda 2","búsqueda 3","búsqueda 4","búsqueda 5","búsqueda 6","búsqueda 7","búsqueda 8"]}`
+      }],
+    })
+    const raw = response.choices[0].message.content || ""
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return { paa: [], related: [] }
+    const parsed = JSON.parse(jsonMatch[0])
+    return {
+      paa: Array.isArray(parsed.paa) ? parsed.paa.filter(Boolean) : [],
+      related: Array.isArray(parsed.related) ? parsed.related.filter(Boolean) : [],
+    }
+  } catch {
+    return { paa: [], related: [] }
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { topic, depth = "basic" } = await req.json()
@@ -93,9 +125,7 @@ export async function POST(req: NextRequest) {
 
     const prompt =
       depth === "deep"
-        ? `Eres un investigador SEO especializado en tecnologia RFID e industria en Colombia y Latinoamerica.
-
-Investiga en profundidad: "${topic}"
+        ? `Eres un investigador SEO. Investiga en profundidad: "${topic}"
 
 DEVUELVE SOLO JSON sin markdown:
 {
@@ -105,11 +135,10 @@ DEVUELVE SOLO JSON sin markdown:
   "trends": ["tendencia 1", "tendencia 2", "tendencia 3"],
   "competitors_latam": [{"name": "empresa", "approach": "enfoque"}],
   "related_keywords": [{"keyword": "kw", "estimated_volume": "volumen estimado"}],
-  "common_questions": ["pregunta 1", "pregunta 2", "pregunta 3", "pregunta 4"],
   "seo_opportunities": ["oportunidad 1", "oportunidad 2", "oportunidad 3"],
   "content_angles": ["angulo 1", "angulo 2", "angulo 3"]
 }`
-        : `Investiga brevemente para WeTracking (empresa RFID en Colombia): "${topic}"
+        : `Investiga brevemente: "${topic}"
 
 DEVUELVE SOLO JSON sin markdown:
 {
@@ -118,26 +147,30 @@ DEVUELVE SOLO JSON sin markdown:
   "statistics": [{"data": "estadistica", "source": "fuente"}],
   "trends": ["tendencia 1", "tendencia 2"],
   "related_keywords": [{"keyword": "kw", "estimated_volume": "estimado"}],
-  "common_questions": ["pregunta 1", "pregunta 2"],
   "seo_opportunities": ["oportunidad 1", "oportunidad 2"],
   "content_angles": ["angulo 1", "angulo 2"]
 }`
 
-    // Step 1: Perplexity search — gets real web data + citation URLs
-    const response = await perplexity.chat.completions.create({
-      model: "sonar-pro",
-      messages: [{ role: "user", content: prompt }],
-    })
+    // Step 1: main research + PAA extraction in parallel
+    const [response, paaData] = await Promise.all([
+      perplexity.chat.completions.create({
+        model: "sonar-pro",
+        messages: [{ role: "user", content: prompt }],
+      }),
+      fetchGooglePAA(topic),
+    ])
 
     const raw = response.choices[0].message.content || ""
     const clean = raw.replace(/```json\n?|```/g, "").trim()
     const data = JSON.parse(clean)
 
-    // Step 2: Extract citation URLs that Perplexity actually read
+    // Step 2: citation URLs
     const citations: string[] = (response as any).citations || []
     data.sources = citations.slice(0, 8)
+    data.paa_questions = paaData.paa
+    data.related_searches = paaData.related
 
-    // Step 3: Fetch and scrape those pages (free — no API needed)
+    // Step 3: scrape citation pages
     let competitor_analysis = null
     if (citations.length > 0) {
       const pages = await Promise.all(
@@ -146,8 +179,6 @@ DEVUELVE SOLO JSON sin markdown:
           text: await fetchPageText(url),
         }))
       )
-
-      // Step 4: Claude analyzes the scraped content
       competitor_analysis = await analyzeCompetitors(topic, pages)
     }
 

@@ -134,12 +134,16 @@ DEVUELVE SOLO JSON sin markdown:
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { node_id, status, page_id } = await req.json()
+    const { node_id, status, page_id, url, keyword, page_type, depth } = await req.json()
     const memory = readMemory()
     const node = (memory.sitemap_nodes || []).find((n: any) => n.id === node_id)
     if (node) {
-      if (status !== undefined) node.status = status
-      if (page_id !== undefined) node.page_id = page_id
+      if (status     !== undefined) node.status     = status
+      if (page_id    !== undefined) node.page_id    = page_id
+      if (url        !== undefined) node.url        = url
+      if (keyword    !== undefined) node.keyword    = keyword
+      if (page_type  !== undefined) node.page_type  = page_type
+      if (depth      !== undefined) node.depth      = depth
       writeMemory(memory)
     }
     return Response.json({ success: true })

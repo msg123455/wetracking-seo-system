@@ -7,7 +7,7 @@ type Cluster   = { id: string; name: string; created_at: string }
 type Research  = { id: string; topic: string; depth: string; data: any; competitor_analysis?: any; sources_scraped?: number; created_at: string }
 type YTScript  = { id: string; keyword: string; page_type: string; page_id: string | null; script: any; created_at: string }
 type AEOItem   = { id: string; keyword: string; page_type: string; title: string; aeo: any | null; list: string }
-type ContentSection = { type: string; content: string; alt_text: string }
+type ContentSection = { type: string; content: string; alt_text: string; items?: string[]; headers?: string[]; rows?: string[][] }
 
 type Page = {
   id: string; keyword: string; page_type: string; industry: string
@@ -23,7 +23,8 @@ type SitemapNode = {
 }
 type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
 
-type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published"
+type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images"
+type GeneratedImage = { id: string; url: string; description: string; created_at: string }
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
   pillar:    { label: "Pillar",    color: "#6f42c1", bg: "#f3eeff" },
@@ -79,6 +80,8 @@ export default function SEOCommandCenter() {
   const [imgPageId,    setImgPageId]    = useState("")
   const [imgField,     setImgField]     = useState("image_1_url")
   const [imgPreview,   setImgPreview]   = useState("")
+  const [genImages,    setGenImages]    = useState<GeneratedImage[]>([])
+  const [imgTestDesc,  setImgTestDesc]  = useState("")
 
   // form – YouTube
   const [ytKeyword,    setYtKeyword]    = useState("")
@@ -90,6 +93,16 @@ export default function SEOCommandCenter() {
   // pending
   const [expandedPage, setExpandedPage] = useState<string|null>(null)
   const [expandedAeo,  setExpandedAeo]  = useState<string|null>(null)
+  const [ctaEdits,     setCtaEdits]     = useState<Record<string, string>>({})
+  const [ctaSaved,     setCtaSaved]     = useState<Record<string, boolean>>({})
+
+  // sitemap node editing
+  const [editingNode,  setEditingNode]  = useState<string|null>(null)
+  const [nodeEdits,    setNodeEdits]    = useState<Record<string, {url:string;keyword:string;page_type:string}>>({})
+  const [showAddNode,  setShowAddNode]  = useState(false)
+  const [addNodeUrl,   setAddNodeUrl]   = useState("")
+  const [addNodeKw,    setAddNodeKw]    = useState("")
+  const [addNodeType,  setAddNodeType]  = useState<"pillar"|"secondary"|"third"|"blog">("secondary")
 
   // global loading + messages
   const [loading,      setLoading]      = useState(false)
@@ -111,6 +124,7 @@ export default function SEOCommandCenter() {
       if (rR.ok) setResearch(await rR.json())
       if (yR.ok) setYtScripts(await yR.json())
       if (aR.ok) setAeoItems(await aR.json())
+      const iR = await fetch("/api/generate-image"); if (iR.ok) setGenImages(await iR.json())
       if (sbR.ok) {
         const d = await sbR.json()
         setSitemapDefs(d.sitemaps || [])
@@ -226,7 +240,7 @@ export default function SEOCommandCenter() {
       // Step 1: Perplexity + scrape competitors
       const rr = await fetch("/api/research", {
         method:"POST", headers:jsonHdr,
-        body: JSON.stringify({ topic: node.keyword, depth: "basic" }),
+        body: JSON.stringify({ topic: node.keyword, depth: "deep" }),
       })
       const rd = await rr.json(); if (!rr.ok) throw new Error(rd.error)
       notify(`Research listo (${rd.sources_scraped || 0} paginas analizadas). Generando contenido...`, "info")
@@ -331,6 +345,30 @@ export default function SEOCommandCenter() {
     await fetch("/api/pending", { method:"DELETE", headers:jsonHdr, body: JSON.stringify({ page_id:id }) })
     loadData()
   }
+  async function saveNodeEdit(node_id: string) {
+    const edits = nodeEdits[node_id]; if (!edits) return
+    await fetch("/api/sitemap-builder", { method:"PATCH", headers:jsonHdr, body: JSON.stringify({ node_id, ...edits }) })
+    setEditingNode(null)
+    loadData()
+  }
+  async function deleteNode(node_id: string) {
+    await fetch("/api/sitemap-builder", { method:"DELETE", headers:jsonHdr, body: JSON.stringify({ node_id }) })
+    loadData()
+  }
+  async function addNode() {
+    if (!addNodeUrl.trim() || !addNodeKw.trim() || !activeSitemapId) return
+    const depth = addNodeType === "pillar" ? 0 : addNodeType === "secondary" ? 1 : addNodeType === "blog" ? 0 : 2
+    await fetch("/api/sitemap-builder", { method:"POST", headers:jsonHdr, body: JSON.stringify({ action:"add_node", sitemap_id:activeSitemapId, url:addNodeUrl, keyword:addNodeKw, page_type:addNodeType, depth }) })
+    setAddNodeUrl(""); setAddNodeKw(""); setShowAddNode(false); loadData()
+  }
+
+  async function saveCta(page_id: string, value: string) {
+    try {
+      await fetch("/api/pending", { method:"PATCH", headers:jsonHdr, body: JSON.stringify({ page_id, field:"cta_text", value }) })
+      setCtaSaved(prev => ({ ...prev, [page_id]: true }))
+      setTimeout(() => setCtaSaved(prev => ({ ...prev, [page_id]: false })), 2000)
+    } catch { /* silent */ }
+  }
 
   // ── Sitemap tree rendering ──
   const activeSitemap = sitemapDefs.find(s => s.id === activeSitemapId) || null
@@ -361,6 +399,7 @@ export default function SEOCommandCenter() {
     { key:"aeo",          label:"AEO",          count: aeoItems.filter(a=>a.aeo).length },
     { key:"clusters",     label:"Clusters",     count: clusters.length },
     { key:"published",    label:"Publicadas",   count: publishedSM.length },
+    { key:"images",       label:"Imagenes",     count: genImages.length },
   ]
 
   return (
@@ -518,43 +557,100 @@ export default function SEOCommandCenter() {
                       const ti = PAGE_TYPE_COLORS[node.page_type] || PAGE_TYPE_COLORS.pillar
                       const statusColor = node.status === "generated" ? "#28a745" : node.status === "published" ? "#007aed" : "#aaa"
                       const statusBg = node.status === "generated" ? "#e8f5e9" : node.status === "published" ? "#e8f4fd" : "#f5f5f5"
+                      const isEditing = editingNode === node.id
+                      const edits = nodeEdits[node.id]
                       return (
-                        <div key={node.id} style={{
-                          display:"flex", alignItems:"center", gap:8,
-                          padding:"7px 18px",
-                          paddingLeft: 18 + node.depth * 22,
-                          borderLeft: node.depth > 0 ? undefined : undefined,
-                          borderBottom:"1px solid #f8f8f8",
-                          background: node.status === "generated" ? "#fafffe" : "white",
-                        }}>
-                          {node.depth > 0 && (
-                            <span style={{ color:"#ddd", fontSize:16, marginLeft:-(node.depth * 8) }}>└</span>
-                          )}
-                          <span style={{
-                            padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:700,
-                            background:ti.bg, color:ti.color, flexShrink:0, minWidth:58, textAlign:"center",
-                          }}>{ti.label}</span>
-                          <code style={{ fontSize:11, color:"#888", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{node.url}</code>
-                          <span style={{ flex:1, fontSize:12, color:"#0b194f", fontWeight:node.depth===0?700:400 }}>{node.keyword}</span>
-                          <span style={{ padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:600, background:statusBg, color:statusColor, flexShrink:0 }}>{node.status}</span>
-                          {node.status === "draft" && node.page_type === "secondary" && (
-                            <button onClick={()=>researchAndGenerate(node)} disabled={loading} style={{ ...BTN_BLUE, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
-                              Investigar + Generar
-                            </button>
-                          )}
-                          {node.status === "draft" && node.page_type !== "secondary" && (
-                            <button onClick={()=>generateFromNode(node)} disabled={loading} style={{ ...BTN_CYAN, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
-                              Generar
-                            </button>
-                          )}
-                          {node.status === "generated" && node.page_id && (
-                            <button onClick={()=>{setTab("pending"); setExpandedPage(node.page_id)}} style={{ ...BTN_GHOST, padding:"4px 12px", fontSize:11, flexShrink:0 }}>
-                              Ver
-                            </button>
+                        <div key={node.id}>
+                          {isEditing ? (
+                            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 18px", background:"#f0f8ff", borderBottom:"1px solid #bee3f8" }}>
+                              <select
+                                value={edits?.page_type ?? node.page_type}
+                                onChange={e => setNodeEdits(prev => ({ ...prev, [node.id]: { ...(prev[node.id]||{url:node.url,keyword:node.keyword,page_type:node.page_type}), page_type:e.target.value }}))}
+                                style={{ ...SEL, width:110, padding:"4px 8px", fontSize:11 }}
+                              >
+                                <option value="pillar">Pillar</option>
+                                <option value="secondary">Secondary</option>
+                                <option value="third">Third</option>
+                                <option value="blog">Blog</option>
+                              </select>
+                              <input
+                                value={edits?.url ?? node.url}
+                                onChange={e => setNodeEdits(prev => ({ ...prev, [node.id]: { ...(prev[node.id]||{url:node.url,keyword:node.keyword,page_type:node.page_type}), url:e.target.value }}))}
+                                style={{ ...INP, flex:"0 0 220px", fontSize:11, padding:"4px 8px", fontFamily:"monospace" }}
+                                placeholder="URL"
+                              />
+                              <input
+                                value={edits?.keyword ?? node.keyword}
+                                onChange={e => setNodeEdits(prev => ({ ...prev, [node.id]: { ...(prev[node.id]||{url:node.url,keyword:node.keyword,page_type:node.page_type}), keyword:e.target.value }}))}
+                                style={{ ...INP, flex:1, fontSize:11, padding:"4px 8px" }}
+                                placeholder="Keyword"
+                              />
+                              <button onClick={()=>saveNodeEdit(node.id)} style={{ ...BTN_BLUE, padding:"4px 12px", fontSize:11, flexShrink:0 }}>Guardar</button>
+                              <button onClick={()=>setEditingNode(null)} style={{ ...BTN_GHOST, padding:"4px 10px", fontSize:11, flexShrink:0 }}>Cancelar</button>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display:"flex", alignItems:"center", gap:8,
+                              padding:"7px 18px",
+                              paddingLeft: 18 + node.depth * 22,
+                              borderBottom:"1px solid #f8f8f8",
+                              background: node.status === "generated" ? "#fafffe" : "white",
+                            }}>
+                              {node.depth > 0 && (
+                                <span style={{ color:"#ddd", fontSize:16, marginLeft:-(node.depth * 8) }}>└</span>
+                              )}
+                              <span style={{
+                                padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:700,
+                                background:ti.bg, color:ti.color, flexShrink:0, minWidth:58, textAlign:"center",
+                              }}>{ti.label}</span>
+                              <code style={{ fontSize:11, color:"#888", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{node.url}</code>
+                              <span style={{ flex:1, fontSize:12, color:"#0b194f", fontWeight:node.depth===0?700:400 }}>{node.keyword}</span>
+                              <span style={{ padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:600, background:statusBg, color:statusColor, flexShrink:0 }}>{node.status}</span>
+                              {(node.status === "draft" || node.status === "generated") && (
+                                <>
+                                  <button onClick={()=>researchAndGenerate(node)} disabled={loading} style={{ ...BTN_BLUE, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
+                                    Investigar + Generar
+                                  </button>
+                                  <button onClick={()=>generateFromNode(node)} disabled={loading} style={{ ...BTN_CYAN, padding:"4px 12px", fontSize:11, flexShrink:0, opacity:loading?0.55:1 }}>
+                                    Generar
+                                  </button>
+                                </>
+                              )}
+                              {node.status === "generated" && node.page_id && (
+                                <button onClick={()=>{setTab("pending"); setExpandedPage(node.page_id!)}} style={{ ...BTN_GHOST, padding:"4px 12px", fontSize:11, flexShrink:0 }}>
+                                  Ver
+                                </button>
+                              )}
+                              <button
+                                onClick={()=>{ setEditingNode(node.id); setNodeEdits(prev=>({...prev,[node.id]:{url:node.url,keyword:node.keyword,page_type:node.page_type}})) }}
+                                style={{ ...BTN_GHOST, padding:"3px 8px", fontSize:11, flexShrink:0 }}
+                              >Editar</button>
+                              {node.status === "draft" && (
+                                <button onClick={()=>deleteNode(node.id)} style={{ ...BTN_DEL, padding:"3px 8px", fontSize:11, flexShrink:0 }}>x</button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )
                     })}
+                    {showAddNode ? (
+                      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 18px", background:"#f0fdf4", borderTop:"1px solid #86efac" }}>
+                        <select value={addNodeType} onChange={e=>setAddNodeType(e.target.value as any)} style={{ ...SEL, width:110, padding:"4px 8px", fontSize:11 }}>
+                          <option value="pillar">Pillar</option>
+                          <option value="secondary">Secondary</option>
+                          <option value="third">Third</option>
+                          <option value="blog">Blog</option>
+                        </select>
+                        <input value={addNodeUrl} onChange={e=>setAddNodeUrl(e.target.value)} placeholder="/url/de-la-pagina" style={{ ...INP, flex:"0 0 220px", fontSize:11, padding:"4px 8px", fontFamily:"monospace" }} />
+                        <input value={addNodeKw} onChange={e=>setAddNodeKw(e.target.value)} placeholder="keyword SEO" style={{ ...INP, flex:1, fontSize:11, padding:"4px 8px" }} onKeyDown={e=>e.key==="Enter"&&addNode()} />
+                        <button onClick={addNode} disabled={!addNodeUrl.trim()||!addNodeKw.trim()} style={{ ...BTN_BLUE, padding:"4px 12px", fontSize:11, background:"#28a745", flexShrink:0, opacity:!addNodeUrl.trim()||!addNodeKw.trim()?0.55:1 }}>Agregar</button>
+                        <button onClick={()=>setShowAddNode(false)} style={{ ...BTN_GHOST, padding:"4px 10px", fontSize:11, flexShrink:0 }}>Cancelar</button>
+                      </div>
+                    ) : (
+                      <div style={{ padding:"8px 18px", borderTop:"1px solid #f0f0f0" }}>
+                        <button onClick={()=>setShowAddNode(true)} style={{ ...BTN_GHOST, fontSize:12 }}>+ Agregar pagina</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -640,7 +736,31 @@ export default function SEOCommandCenter() {
                       <ResBlock label="Tendencias" items={r.data.trends} />
                       <ResBlock label="Oportunidades SEO" items={r.data.seo_opportunities} />
                       <ResBlock label="Keywords relacionadas" items={r.data.related_keywords?.map((k:any)=>k.keyword+" ("+k.estimated_volume+")")} />
-                      <ResBlock label="Preguntas frecuentes" items={r.data.common_questions} />
+                      {r.data.paa_questions?.length>0 && (
+                        <div style={{ padding:"12px 14px", background:"#f0f9ff", border:"1px solid #bae6fd", borderRadius:8 }}>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#0369a1", textTransform:"uppercase", letterSpacing:0.5, display:"block", marginBottom:8 }}>
+                            La gente tambien pregunta (Google PAA)
+                          </span>
+                          {r.data.paa_questions.map((q:string,i:number)=>(
+                            <div key={i} style={{ display:"flex", gap:8, marginBottom:5, alignItems:"flex-start" }}>
+                              <span style={{ flexShrink:0, fontSize:10, fontWeight:700, color:"#0369a1", background:"#e0f2fe", padding:"1px 5px", borderRadius:3, marginTop:1 }}>PAA</span>
+                              <span style={{ fontSize:12, color:"#0c4a6e" }}>{q}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {r.data.related_searches?.length>0 && (
+                        <div style={{ padding:"12px 14px", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:8 }}>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#166534", textTransform:"uppercase", letterSpacing:0.5, display:"block", marginBottom:8 }}>
+                            Busquedas relacionadas en Google
+                          </span>
+                          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                            {r.data.related_searches.map((s:string,i:number)=>(
+                              <span key={i} style={{ fontSize:11, color:"#166534", background:"#dcfce7", padding:"3px 8px", borderRadius:20, border:"1px solid #86efac" }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {r.competitor_analysis && (
                         <div style={{ marginTop:4, padding:"14px 16px", background:"#fff8e1", borderRadius:8, border:"1px solid #ffe082", display:"flex", flexDirection:"column", gap:10 }}>
                           <span style={{ fontSize:11, fontWeight:700, color:"#e65100", textTransform:"uppercase", letterSpacing:0.5 }}>
@@ -791,6 +911,20 @@ export default function SEOCommandCenter() {
                           {" · "}{new Date(p.created_at).toLocaleDateString("es-CO")}
                         </p>
                         <p style={{ margin:"5px 0 0", color:"#666", fontSize:13, lineHeight:1.5 }}>{p.content?.meta_description}</p>
+                        <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8 }}>
+                          <span style={{ fontSize:10, fontWeight:700, color:"#aaa", textTransform:"uppercase", flexShrink:0, letterSpacing:0.5 }}>CTA</span>
+                          <input
+                            value={ctaEdits[p.id] ?? p.content?.cta_text ?? ""}
+                            onChange={e => setCtaEdits(prev => ({ ...prev, [p.id]: e.target.value }))}
+                            onBlur={e => {
+                              const val = e.target.value
+                              if (val !== p.content?.cta_text) saveCta(p.id, val)
+                            }}
+                            placeholder="ej: Solicita una demo gratis"
+                            style={{ ...INP, flex:1, fontSize:12, padding:"5px 9px" }}
+                          />
+                          {ctaSaved[p.id] && <span style={{ fontSize:11, color:"#28a745", flexShrink:0, fontWeight:600 }}>Guardado</span>}
+                        </div>
                       </div>
                       <div style={{ display:"flex", gap:6, flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end" }}>
                         <button onClick={()=>setExpandedPage(isExp?null:p.id)} style={BTN_GHOST}>{isExp?"Cerrar":"Ver"}</button>
@@ -804,7 +938,6 @@ export default function SEOCommandCenter() {
                         <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:12 }}>
                           <PMeta label="title" text={p.content?.title} />
                           <PMeta label="meta_description" text={p.content?.meta_description} />
-                          <PMeta label="cta_text" text={p.content?.cta_text} />
                         </div>
                         <ContentPrev page={p} />
                         {p.aeo && (
@@ -1019,6 +1152,79 @@ export default function SEOCommandCenter() {
           </div>
         )}
 
+        {/* ══ IMAGENES ══ */}
+        {tab==="images" && (
+          <div>
+            <h2 style={H2}>Generador de Imagenes</h2>
+            <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
+              Gemini Imagen 3 · estilo editorial WeTracking · logo aplicado automaticamente
+            </p>
+
+            <div style={{ background:"white", padding:24, borderRadius:12, border:"1px solid #eee", marginBottom:24 }}>
+              <Field label="Descripcion de la imagen">
+                <input
+                  value={imgTestDesc} onChange={e=>setImgTestDesc(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&!loading&&imgTestDesc.trim()&&(async()=>{
+                    setLoading(true); notify("Generando imagen con Gemini...", "info")
+                    try {
+                      const r = await fetch("/api/generate-image",{method:"POST",headers:jsonHdr,body:JSON.stringify({description:imgTestDesc})})
+                      const d = await r.json(); if(!r.ok) throw new Error(d.error)
+                      notify("Imagen generada", "success"); setImgTestDesc(""); loadData()
+                    } catch(e:any){notify("Error: "+e.message,"error")}
+                    setLoading(false)
+                  })()}
+                  placeholder="ej: ciclo completo de trazabilidad desde materia prima hasta consumidor final"
+                  style={{...INP, width:"100%", boxSizing:"border-box"}}
+                />
+              </Field>
+              <button
+                onClick={async()=>{
+                  if(!imgTestDesc.trim()) return
+                  setLoading(true); notify("Generando imagen con Gemini...", "info")
+                  try {
+                    const r = await fetch("/api/generate-image",{method:"POST",headers:jsonHdr,body:JSON.stringify({description:imgTestDesc})})
+                    const d = await r.json(); if(!r.ok) throw new Error(d.error)
+                    notify("Imagen generada", "success"); setImgTestDesc(""); loadData()
+                  } catch(e:any){notify("Error: "+e.message,"error")}
+                  setLoading(false)
+                }}
+                disabled={loading||!imgTestDesc.trim()}
+                style={{...BTN_BLUE, width:"100%", padding:"13px", fontSize:15, background:"#198754", opacity:loading||!imgTestDesc.trim()?0.55:1, cursor:loading||!imgTestDesc.trim()?"not-allowed":"pointer"}}
+              >
+                {loading?"Generando con Gemini Imagen 3...":"Generar imagen"}
+              </button>
+              <p style={{ color:"#bbb", fontSize:11, textAlign:"center", marginTop:8, marginBottom:0 }}>
+                Fondo navy · paleta WeTracking · logo blanco centrado arriba · sin texto
+              </p>
+            </div>
+
+            {genImages.length===0
+              ? <Empty text="Sin imagenes generadas. Crea la primera arriba." />
+              : (
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+                  {genImages.map(img=>(
+                    <div key={img.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", overflow:"hidden" }}>
+                      <div style={{ position:"relative", background:"#0b194f" }}>
+                        <img src={img.url} alt={img.description} style={{ width:"100%", display:"block", aspectRatio:"16/9", objectFit:"cover" }} />
+                      </div>
+                      <div style={{ padding:"10px 14px" }}>
+                        <p style={{ margin:0, fontSize:12, color:"#444", lineHeight:1.5 }}>{img.description}</p>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
+                          <span style={{ fontSize:11, color:"#bbb" }}>{new Date(img.created_at).toLocaleDateString("es-CO")}</span>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <button onClick={()=>navigator.clipboard.writeText(window.location.origin+img.url)} style={{...BTN_GHOST, padding:"4px 10px", fontSize:11}}>Copiar URL</button>
+                            <button onClick={async()=>{await fetch("/api/generate-image",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:img.id})});loadData()}} style={{...BTN_DEL, padding:"4px 10px", fontSize:11}}>x</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+          </div>
+        )}
+
         {/* ══ PUBLICADAS ══ */}
         {tab==="published" && (
           <div>
@@ -1072,24 +1278,47 @@ export default function SEOCommandCenter() {
 function ContentPrev({ page }: { page: Page }) {
   const { page_type, content } = page
   if (page_type==="blog") return (
-    <div>
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
       <PMeta label="paragraph_1" text={content.paragraph_1} />
+      {content.example_1 && <ExampleBlock text={content.example_1} />}
+      {content.key_points?.length>0 && <ListBlock items={content.key_points} ordered={false} />}
       <PMeta label="paragraph_2" text={content.paragraph_2} />
       <PMeta label="paragraph_3" text={content.paragraph_3} />
+      {content.example_2 && <ExampleBlock text={content.example_2} />}
+      <PMeta label="paragraph_4" text={content.paragraph_4} />
+      {content.image_suggestions?.length>0 && (
+        <ImageSuggestions suggestions={content.image_suggestions} />
+      )}
+      {content.suggested_links?.length>0 && (
+        <SuggestedLinks links={content.suggested_links} />
+      )}
+      {content.external_sources?.length>0 && (
+        <ExternalSources sources={content.external_sources} />
+      )}
     </div>
   )
   return (
     <div>
       <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>Content Sections ({content.content_sections?.length||0})</span>
       <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:5 }}>
-        {content.content_sections?.map((s:ContentSection, i:number)=>(
-          <div key={i} style={{ display:"flex", gap:8, alignItems:"flex-start" }}>
-            <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:s.type==="heading2"?"#e8f4fd":"#f5f5f5", color:s.type==="heading2"?"#007aed":"#888", fontFamily:"monospace", border:"1px solid #e0e0e0" }}>{s.type}</span>
-            <p style={{ margin:0, fontSize:12, color:s.type.startsWith("heading")?"#0b194f":"#666", fontWeight:s.type.startsWith("heading")?600:400 }}>{s.content}</p>
-          </div>
-        ))}
+        {content.content_sections?.map((s:ContentSection, i:number)=>{
+          if (s.type === "example") return <ExampleBlock key={i} text={s.content} />
+          if (s.type === "callout") return <CalloutBlock key={i} text={s.content} />
+          if (s.type === "list") return <ListBlock key={i} items={s.items||[]} ordered={false} />
+          if (s.type === "numbered_list") return <ListBlock key={i} items={s.items||[]} ordered={true} />
+          if (s.type === "table") return <TableBlock key={i} headers={s.headers||[]} rows={s.rows||[]} />
+          return (
+            <div key={i} style={{ display:"flex", gap:8, alignItems:"flex-start" }}>
+              <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:s.type==="heading2"?"#e8f4fd":"#f5f5f5", color:s.type==="heading2"?"#007aed":"#888", fontFamily:"monospace", border:"1px solid #e0e0e0" }}>{s.type}</span>
+              <p style={{ margin:0, fontSize:12, color:s.type.startsWith("heading")?"#0b194f":"#666", fontWeight:s.type.startsWith("heading")?600:400 }}>{s.content}</p>
+            </div>
+          )
+        })}
       </div>
-      {page_type==="pillar" && content.faq_items?.length>0 && (
+      {content.image_suggestions?.length>0 && (
+        <ImageSuggestions suggestions={content.image_suggestions} />
+      )}
+      {(page_type==="pillar"||page_type==="third") && content.faq_items?.length>0 && (
         <div style={{ marginTop:12, borderTop:"1px solid #eee", paddingTop:12 }}>
           <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>FAQ — {content.faq_title}</span>
           {content.faq_items.map((f:any,i:number)=>(
@@ -1100,6 +1329,127 @@ function ContentPrev({ page }: { page: Page }) {
           ))}
         </div>
       )}
+      {content.suggested_links?.length>0 && (
+        <SuggestedLinks links={content.suggested_links} />
+      )}
+      {content.external_sources?.length>0 && (
+        <ExternalSources sources={content.external_sources} />
+      )}
+    </div>
+  )
+}
+
+function ExampleBlock({ text }: { text: string }) {
+  return (
+    <div style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 10px", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:6 }}>
+      <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:"#dcfce7", color:"#166534", fontFamily:"monospace", border:"1px solid #86efac" }}>ejemplo</span>
+      <p style={{ margin:0, fontSize:12, color:"#166534", fontStyle:"italic" }}>{text}</p>
+    </div>
+  )
+}
+
+function CalloutBlock({ text }: { text: string }) {
+  return (
+    <div style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 10px", background:"#eff6ff", border:"1px solid #93c5fd", borderLeft:"4px solid #3b82f6", borderRadius:6 }}>
+      <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:"#dbeafe", color:"#1d4ed8", fontFamily:"monospace", border:"1px solid #93c5fd" }}>clave</span>
+      <p style={{ margin:0, fontSize:12, color:"#1e40af", fontWeight:500 }}>{text}</p>
+    </div>
+  )
+}
+
+function ListBlock({ items, ordered }: { items: string[]; ordered: boolean }) {
+  const Tag = ordered ? "ol" : "ul"
+  return (
+    <div style={{ display:"flex", gap:8, alignItems:"flex-start" }}>
+      <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:"#f5f5f5", color:"#888", fontFamily:"monospace", border:"1px solid #e0e0e0" }}>{ordered ? "steps" : "list"}</span>
+      <Tag style={{ margin:0, paddingLeft:16 }}>
+        {items.map((item, i) => (
+          <li key={i} style={{ fontSize:12, color:"#444", marginBottom:3, lineHeight:1.6 }}>{item}</li>
+        ))}
+      </Tag>
+    </div>
+  )
+}
+
+function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  if (!headers.length) return null
+  return (
+    <div style={{ display:"flex", gap:8, alignItems:"flex-start" }}>
+      <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:"#f5f5f5", color:"#888", fontFamily:"monospace", border:"1px solid #e0e0e0" }}>tabla</span>
+      <div style={{ overflowX:"auto", flex:1 }}>
+        <table style={{ borderCollapse:"collapse", width:"100%", fontSize:11 }}>
+          <thead>
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} style={{ padding:"4px 8px", background:"#f0f0f0", border:"1px solid #ddd", fontWeight:700, textAlign:"left", color:"#333" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} style={{ background: ri%2===0 ? "#fff" : "#fafafa" }}>
+                {row.map((cell, ci) => (
+                  <td key={ci} style={{ padding:"4px 8px", border:"1px solid #ddd", color:"#555" }}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ImageSuggestions({ suggestions }: { suggestions: { after_section: string; description: string }[] }) {
+  return (
+    <div style={{ marginTop:12, borderTop:"1px solid #eee", paddingTop:12 }}>
+      <span style={{ fontSize:11, fontWeight:700, color:"#92400e", textTransform:"uppercase", letterSpacing:0.5 }}>Sugerencias de imagen ({suggestions.length})</span>
+      <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:6 }}>
+        {suggestions.map((s, i) => (
+          <div key={i} style={{ padding:"8px 10px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:6 }}>
+            <p style={{ margin:0, fontSize:11, fontWeight:700, color:"#92400e" }}>Despues de: {s.after_section}</p>
+            <p style={{ margin:"3px 0 0", fontSize:12, color:"#78350f" }}>{s.description}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SuggestedLinks({ links }: { links: { anchor: string; url: string; keyword: string; context: string }[] }) {
+  if (!links.length) return null
+  return (
+    <div style={{ marginTop:12, borderTop:"1px solid #eee", paddingTop:12 }}>
+      <span style={{ fontSize:11, fontWeight:700, color:"#5b21b6", textTransform:"uppercase", letterSpacing:0.5 }}>Links internos sugeridos ({links.length})</span>
+      <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:5 }}>
+        {links.map((l, i) => (
+          <div key={i} style={{ padding:"7px 10px", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6 }}>
+            <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, fontWeight:600, color:"#4c1d95" }}>"{l.anchor}"</span>
+              <span style={{ fontSize:10, color:"#7c3aed" }}>→</span>
+              <code style={{ fontSize:11, background:"#ede9fe", padding:"1px 6px", borderRadius:3, color:"#5b21b6" }}>{l.url}</code>
+            </div>
+            {l.context && <p style={{ margin:"2px 0 0", fontSize:11, color:"#7c3aed" }}>En: {l.context}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ExternalSources({ sources }: { sources: { url: string; domain: string }[] }) {
+  if (!sources.length) return null
+  return (
+    <div style={{ marginTop:12, borderTop:"1px solid #eee", paddingTop:12 }}>
+      <span style={{ fontSize:11, fontWeight:700, color:"#0369a1", textTransform:"uppercase", letterSpacing:0.5 }}>Fuentes externas ({sources.length})</span>
+      <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }}>
+        {sources.map((s, i) => (
+          <div key={i} style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <span style={{ fontSize:10, fontWeight:700, background:"#e0f2fe", color:"#0369a1", padding:"2px 6px", borderRadius:3, flexShrink:0 }}>{s.domain}</span>
+            <span style={{ fontSize:11, color:"#0369a1", wordBreak:"break-all" }}>{s.url}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

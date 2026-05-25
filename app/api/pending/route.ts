@@ -10,6 +10,21 @@ export async function GET() {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const { page_id, field, value } = await req.json()
+    const memory = readMemory()
+    const page = memory.pending_approval.find((p: any) => p.id === page_id)
+    if (!page) return Response.json({ error: "Página no encontrada" }, { status: 404 })
+    page.content[field] = value
+    memory.last_updated = new Date().toISOString()
+    writeMemory(memory)
+    return Response.json({ success: true })
+  } catch (e: any) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const { page_id } = await req.json()
