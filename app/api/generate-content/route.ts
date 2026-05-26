@@ -36,7 +36,7 @@ Nota: no uses siempre el mismo mix. Varía: una sección puede ser paragraph+lis
     return `Eres un experto en SEO y redacción de contenido informativo de largo alcance.
 
 Genera contenido para una Pillar Page (página pilar) sobre: "${keyword}"
-Esta es la página más completa sobre este tema. Cubre todos los ángulos importantes para alguien que quiere entender el tema a fondo.
+Esta es la página más completa y extensa del sitio sobre este tema. Debe cubrir TODOS los ángulos importantes con profundidad real. Objetivo: mínimo 2500 palabras de contenido útil, bien estructurado y sin relleno.
 
 ${REGLAS_CONTENIDO}
 ${PATRON_SECCION}
@@ -87,46 +87,68 @@ Estructura esperada:
   "cta_text": "CTA informativo sin nombre de empresa."
 }
 
-Genera entre 4 y 6 bloques H2, cada uno con su mix visual variado. faq_items exactamente 4. image_suggestions entre 3 y 5. VARÍA el mix visual entre secciones — no repitas el mismo patrón.`
+Genera entre 6 y 8 bloques H2, cada uno con su mix visual variado. Los párrafos deben ser densos y aportar valor real — evita frases genéricas. faq_items exactamente 4. image_suggestions entre 3 y 5. VARÍA el mix visual entre secciones — no repitas el mismo patrón. El objetivo es crear la página más completa sobre este tema en internet en español.`
   }
 
   if (page_type === "secondary") {
-    return `Eres un experto en SEO y redacción de contenido informativo.
+    return `Eres un experto en SEO y redacción de contenido informativo de profundidad real.
 
 Genera contenido para una Secondary Page (página secundaria) sobre: "${keyword}"
-Más enfocada que una pillar page pero igualmente bien desarrollada visualmente.
+Esta página es el HUB de un subtema dentro de la estrategia SEO. Debe ser extensa, visualmente variada y servir como guía de referencia que el lector consulta antes de profundizar en las páginas de tercer nivel que dependen de ella.
 
 ${REGLAS_CONTENIDO}
 ${PATRON_SECCION}
+
+REGLAS ADICIONALES PARA SECONDARY PAGES:
+A. Si el contexto incluye "SUBTEMAS DE TERCER NIVEL", DEBES incluir un H2 dedicado que presente cada subtema con descripción breve. Úsalos todos — este H2 es el índice visual de la sección.
+B. El contenido debe ser lo suficientemente completo para posicionar la keyword, pero debe dejar los detalles profundos para las páginas de tercer nivel.
+C. Incluye siempre FAQ con 4 preguntas reales que la gente busca sobre este tema.
 
 DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo aparecen en sus tipos correspondientes.
 
 {
   "slug": "slug-en-kebab-case",
-  "title": "H1 máximo 60 caracteres — informativo",
+  "title": "H1 máximo 60 caracteres, informativo",
   "meta_description": "Máximo 160 caracteres",
   "content_sections": [
-    { "type": "heading2", "content": "Primer H2", "alt_text": "" },
-    { "type": "paragraph", "content": "150-180 palabras, sin ejemplos.", "alt_text": "" },
-    { "type": "list", "content": "", "alt_text": "", "items": ["Factor 1", "Factor 2", "Factor 3"] },
-    { "type": "callout", "content": "Idea clave de esta sección.", "alt_text": "" },
+    { "type": "heading2", "content": "Qué es [tema]: definición y contexto", "alt_text": "" },
+    { "type": "paragraph", "content": "150-180 palabras. Definición clara y por qué importa.", "alt_text": "" },
+    { "type": "paragraph", "content": "150-180 palabras. Contexto más amplio, problema que resuelve, quién lo necesita.", "alt_text": "" },
+    { "type": "callout", "content": "La idea clave que el lector no debe perderse.", "alt_text": "" },
     { "type": "example", "content": "Caso real.", "alt_text": "" },
-    { "type": "heading2", "content": "Segundo H2", "alt_text": "" },
-    { "type": "paragraph", "content": "150-180 palabras.", "alt_text": "" },
-    { "type": "numbered_list", "content": "", "alt_text": "", "items": ["Paso 1", "Paso 2", "Paso 3"] },
+    { "type": "heading2", "content": "Cómo funciona [tema] en la práctica", "alt_text": "" },
+    { "type": "paragraph", "content": "150-180 palabras. Mecanismo, proceso o lógica de funcionamiento.", "alt_text": "" },
+    { "type": "numbered_list", "content": "", "alt_text": "", "items": ["Paso/elemento 1: descripción", "Paso/elemento 2", "Paso/elemento 3", "Paso/elemento 4"] },
+    { "type": "example", "content": "Caso real de funcionamiento.", "alt_text": "" },
+    { "type": "heading2", "content": "Factores clave o variables que determinan [tema]", "alt_text": "" },
+    { "type": "paragraph", "content": "150-180 palabras. Introduce las variables o dimensiones del tema.", "alt_text": "" },
+    { "type": "table", "content": "", "alt_text": "", "headers": ["Variable", "Descripción", "Impacto"], "rows": [["Variable 1", "...", "..."], ["Variable 2", "...", "..."], ["Variable 3", "...", "..."]] },
     { "type": "example", "content": "Caso real.", "alt_text": "" },
-    { "type": "heading2", "content": "Tercer H2", "alt_text": "" },
-    { "type": "paragraph", "content": "150-180 palabras.", "alt_text": "" },
-    { "type": "table", "content": "", "alt_text": "", "headers": ["Columna 1", "Columna 2"], "rows": [["celda", "celda"], ["celda", "celda"]] },
-    { "type": "example", "content": "Caso real.", "alt_text": "" }
+    { "type": "heading2", "content": "[Subtemas o variantes] dentro de [tema]: guía completa", "alt_text": "" },
+    { "type": "paragraph", "content": "120-150 palabras. Introduce los subtemas o variantes que se desarrollan en profundidad en las páginas relacionadas.", "alt_text": "" },
+    { "type": "list", "content": "", "alt_text": "", "items": ["Subtema 1: descripción de 1-2 oraciones", "Subtema 2: descripción", "Subtema 3: descripción", "Subtema 4: descripción"] },
+    { "type": "heading2", "content": "Cómo elegir o implementar [tema] según tu caso", "alt_text": "" },
+    { "type": "paragraph", "content": "150-180 palabras. Criterios de decisión o pasos de implementación.", "alt_text": "" },
+    { "type": "list", "content": "", "alt_text": "", "items": ["Criterio/paso 1", "Criterio/paso 2", "Criterio/paso 3"] },
+    { "type": "callout", "content": "El criterio más importante para tomar la decisión correcta.", "alt_text": "" },
+    { "type": "example", "content": "Caso real de implementación.", "alt_text": "" }
   ],
   "image_suggestions": [
-    { "after_section": "H2 relevante", "description": "Imagen sugerida (nota interna)" }
+    { "after_section": "H2 más visual del contenido", "description": "Imagen o diagrama sugerido" },
+    { "after_section": "Otro H2 relevante", "description": "Segunda imagen sugerida" }
+  ],
+  "faq_title": "Preguntas frecuentes sobre [tema]",
+  "faq_subtitle": "Respuestas a lo que más se busca en Google sobre este tema",
+  "faq_items": [
+    { "question": "¿Pregunta real de Google sobre este tema?", "answer": "Respuesta directa de 3-4 oraciones." },
+    { "question": "¿Segunda pregunta frecuente?", "answer": "Respuesta completa." },
+    { "question": "¿Tercera pregunta?", "answer": "Respuesta completa." },
+    { "question": "¿Cuarta pregunta?", "answer": "Respuesta completa." }
   ],
   "cta_text": "CTA informativo sin nombre de empresa."
 }
 
-3 bloques H2, mix visual variado en cada uno. image_suggestions entre 2 y 3.`
+5 bloques H2, mix visual variado en cada uno. Los párrafos deben ser densos — 160-200 palabras cada uno con datos concretos, no generalidades. faq_items exactamente 4 preguntas reales. image_suggestions entre 2 y 3. Si el contexto indica subtemas de tercer nivel, el H2 de subtemas/variantes DEBE listarlos todos con descripción real de cada uno. Objetivo: página de referencia sobre el tema, mínimo 1800 palabras útiles.`
   }
 
   if (page_type === "third") {
@@ -215,6 +237,7 @@ Todo en español latinoamericano.`
 
 function buildSitemapContext(memory: any, keyword: string, page_type: string, cluster_id: string, pillar_id: string): string {
   const allPages: any[] = [...(memory.pending_approval || []), ...(memory.published || [])]
+  const sitemapNodes: any[] = memory.sitemap_nodes || []
 
   const h2sOf = (page: any): string[] =>
     page?.content?.content_sections
@@ -222,6 +245,26 @@ function buildSitemapContext(memory: any, keyword: string, page_type: string, cl
       ?.map((s: any) => s.content) || []
 
   let ctx = ""
+
+  // For secondary pages: auto-detect third-level children in the sitemap
+  if (page_type === "secondary") {
+    const currentNode = sitemapNodes.find((n: any) =>
+      n.keyword?.toLowerCase() === keyword?.toLowerCase()
+    )
+    if (currentNode) {
+      const children = sitemapNodes.filter((n: any) => n.parent_id === currentNode.id)
+      if (children.length > 0) {
+        ctx += `\nSUBTEMAS DE TERCER NIVEL QUE DEPENDEN DE ESTA PÁGINA (third pages ya definidas en el sitemap):\n`
+        for (const child of children) {
+          ctx += `  - "${child.keyword}" → ${child.url}\n`
+        }
+        ctx += `\nINSTRUCCION CRITICA: Esta página es el HUB que introduce y conecta todos esos subtemas. DEBES:\n`
+        ctx += `  1. Incluir un H2 dedicado que presente TODOS los subtemas de la lista anterior con una descripción de 1-2 oraciones cada uno.\n`
+        ctx += `  2. Mencionar cada subtema al menos una vez en el cuerpo del contenido.\n`
+        ctx += `  3. No desarrollar en profundidad cada subtema aquí — el lector encontrará eso en las páginas de tercer nivel.\n`
+      }
+    }
+  }
 
   // Parent pillar page
   if (pillar_id && pillar_id !== "default") {

@@ -1318,7 +1318,7 @@ function ContentPrev({ page }: { page: Page }) {
       {content.image_suggestions?.length>0 && (
         <ImageSuggestions suggestions={content.image_suggestions} />
       )}
-      {(page_type==="pillar"||page_type==="third") && content.faq_items?.length>0 && (
+      {(page_type==="pillar"||page_type==="secondary"||page_type==="third") && content.faq_items?.length>0 && (
         <div style={{ marginTop:12, borderTop:"1px solid #eee", paddingTop:12 }}>
           <span style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase" }}>FAQ — {content.faq_title}</span>
           {content.faq_items.map((f:any,i:number)=>(

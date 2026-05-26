@@ -125,18 +125,41 @@ export async function POST(req: NextRequest) {
 
     const prompt =
       depth === "deep"
-        ? `Eres un investigador SEO. Investiga en profundidad: "${topic}"
+        ? `Eres un investigador SEO senior. Investiga exhaustivamente: "${topic}" con foco en Colombia y Latinoamerica.
 
 DEVUELVE SOLO JSON sin markdown:
 {
-  "summary": "Resumen ejecutivo de 150 palabras",
-  "key_facts": ["hecho 1", "hecho 2", "hecho 3", "hecho 4", "hecho 5"],
-  "statistics": [{"data": "estadistica concreta", "source": "fuente"}],
-  "trends": ["tendencia 1", "tendencia 2", "tendencia 3"],
-  "competitors_latam": [{"name": "empresa", "approach": "enfoque"}],
-  "related_keywords": [{"keyword": "kw", "estimated_volume": "volumen estimado"}],
-  "seo_opportunities": ["oportunidad 1", "oportunidad 2", "oportunidad 3"],
-  "content_angles": ["angulo 1", "angulo 2", "angulo 3"]
+  "summary": "Resumen ejecutivo de 250 palabras — contexto general, relevancia en LATAM, estado actual del tema",
+  "key_facts": ["hecho 1", "hecho 2", "hecho 3", "hecho 4", "hecho 5", "hecho 6", "hecho 7", "hecho 8", "hecho 9", "hecho 10"],
+  "statistics": [
+    {"data": "estadistica concreta con numero", "source": "fuente"},
+    {"data": "estadistica 2", "source": "fuente"},
+    {"data": "estadistica 3", "source": "fuente"},
+    {"data": "estadistica 4", "source": "fuente"},
+    {"data": "estadistica 5", "source": "fuente"}
+  ],
+  "trends": ["tendencia 1", "tendencia 2", "tendencia 3", "tendencia 4", "tendencia 5"],
+  "competitors_latam": [
+    {"name": "empresa", "approach": "enfoque detallado de su estrategia"},
+    {"name": "empresa 2", "approach": "enfoque"},
+    {"name": "empresa 3", "approach": "enfoque"},
+    {"name": "empresa 4", "approach": "enfoque"},
+    {"name": "empresa 5", "approach": "enfoque"}
+  ],
+  "related_keywords": [
+    {"keyword": "kw 1", "estimated_volume": "volumen estimado"},
+    {"keyword": "kw 2", "estimated_volume": "volumen"},
+    {"keyword": "kw 3", "estimated_volume": "volumen"},
+    {"keyword": "kw 4", "estimated_volume": "volumen"},
+    {"keyword": "kw 5", "estimated_volume": "volumen"},
+    {"keyword": "kw 6", "estimated_volume": "volumen"},
+    {"keyword": "kw 7", "estimated_volume": "volumen"},
+    {"keyword": "kw 8", "estimated_volume": "volumen"}
+  ],
+  "seo_opportunities": ["oportunidad 1", "oportunidad 2", "oportunidad 3", "oportunidad 4", "oportunidad 5"],
+  "content_angles": ["angulo unico 1", "angulo 2", "angulo 3", "angulo 4", "angulo 5"],
+  "regulatory_context": "Normativa o regulacion relevante en Colombia/LATAM para este tema",
+  "local_context": "Contexto especifico de Colombia: industria, mercado, adoption rate, retos locales"
 }`
         : `Investiga brevemente: "${topic}"
 
@@ -166,7 +189,8 @@ DEVUELVE SOLO JSON sin markdown:
 
     // Step 2: citation URLs
     const citations: string[] = (response as any).citations || []
-    data.sources = citations.slice(0, 8)
+    const scrapeLimit = depth === "deep" ? 10 : 5
+    data.sources = citations.slice(0, scrapeLimit + 2)
     data.paa_questions = paaData.paa
     data.related_searches = paaData.related
 
@@ -174,7 +198,7 @@ DEVUELVE SOLO JSON sin markdown:
     let competitor_analysis = null
     if (citations.length > 0) {
       const pages = await Promise.all(
-        citations.slice(0, 5).map(async (url: string) => ({
+        citations.slice(0, scrapeLimit).map(async (url: string) => ({
           url,
           text: await fetchPageText(url),
         }))
@@ -189,7 +213,7 @@ DEVUELVE SOLO JSON sin markdown:
       depth,
       data,
       competitor_analysis,
-      sources_scraped: citations.slice(0, 5).length,
+      sources_scraped: citations.slice(0, scrapeLimit).length,
       created_at: new Date().toISOString(),
     }
     if (!memory.research) memory.research = []

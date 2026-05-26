@@ -166,7 +166,7 @@ function cleanContent(content: any): any {
   return rest
 }
 
-async function getEntityConfig(page: any): Promise<{ entity: string; data: Record<string, any> }> {
+async function getEntityConfig(page: any, memory: any): Promise<{ entity: string; data: Record<string, any> }> {
   const { content, page_type, cluster_id, pillar_id } = page
 
   // Inject images before cleaning (only for pillar/secondary/third that have content_sections)
@@ -191,11 +191,29 @@ async function getEntityConfig(page: any): Promise<{ entity: string; data: Recor
         entity: "SecondaryPage",
         data: { ...clean, cluster_id: cluster_id || "default", pillar_id: pillar_id || "default", is_active: true },
       }
-    case "third":
-      return {
-        entity: "SecondaryPage",
-        data: { ...clean, cluster_id: cluster_id || "default", pillar_id: pillar_id || "default", is_active: true },
+    case "third": {
+      // Derive pillar_slug, secondary_slug and final slug from sitemap node URL
+      // e.g. /trazabilidad/tipos/hacia-adelante → pillar=trazabilidad, secondary=tipos, slug=hacia-adelante
+      let pillar_slug = ""
+      let secondary_slug = ""
+      let thirdSlug = clean.slug || ""
+
+      const sitemapNode = (memory.sitemap_nodes || []).find((n: any) => n.page_id === page.id)
+      if (sitemapNode?.url) {
+        const parts = sitemapNode.url.replace(/^\//, "").split("/")
+        if (parts.length >= 3) { pillar_slug = parts[0]; secondary_slug = parts[1]; thirdSlug = parts[2] }
+        else if (parts.length === 2) { pillar_slug = parts[0]; thirdSlug = parts[1] }
+      } else if (clean.slug?.includes("/")) {
+        const parts = clean.slug.split("/")
+        if (parts.length >= 3) { pillar_slug = parts[0]; secondary_slug = parts[1]; thirdSlug = parts[2] }
+        else if (parts.length === 2) { pillar_slug = parts[0]; thirdSlug = parts[1] }
       }
+
+      return {
+        entity: "ThirdPage",
+        data: { ...clean, slug: thirdSlug, pillar_slug, secondary_slug, cluster_id: cluster_id || "default", pillar_id: pillar_id || "default", is_active: true },
+      }
+    }
     case "blog":
       return {
         entity: "BlogPost",
@@ -220,7 +238,7 @@ export async function POST(req: NextRequest) {
     }
 
     const page = memory.pending_approval[pageIndex]
-    const { entity, data } = await getEntityConfig(page)
+    const { entity, data } = await getEntityConfig(page, memory)
 
     // Escape non-ASCII so Base44's Python backend doesn't choke on Spanish text
     const safeBody = JSON.stringify({ entity, action: "create", data })
