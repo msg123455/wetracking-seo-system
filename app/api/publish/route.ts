@@ -180,33 +180,42 @@ async function getEntityConfig(page: any, memory: any): Promise<{ entity: string
 
   const clean = cleanContent(processedContent)
 
+  // Always look up the sitemap node — its URL is the source of truth for slugs
+  const sitemapNode = (memory.sitemap_nodes || []).find((n: any) => n.page_id === page.id)
+
+  // Helper: extract last URL segment as slug
+  function lastSegment(url: string): string {
+    return url.replace(/^\//, "").split("/").filter(Boolean).pop() || ""
+  }
+
   switch (page_type) {
-    case "pillar":
+    case "pillar": {
+      const slug = sitemapNode ? lastSegment(sitemapNode.url) : clean.slug
       return {
         entity: "PillarPage",
-        data: { ...clean, cluster_id: cluster_id || "default", is_active: true },
+        data: { ...clean, slug, cluster_id: cluster_id || "default", is_active: true },
       }
-    case "secondary":
+    }
+    case "secondary": {
+      const slug = sitemapNode ? lastSegment(sitemapNode.url) : clean.slug
       return {
         entity: "SecondaryPage",
-        data: { ...clean, cluster_id: cluster_id || "default", pillar_id: pillar_id || "default", is_active: true },
+        data: { ...clean, slug, cluster_id: cluster_id || "default", pillar_id: pillar_id || "default", is_active: true },
       }
+    }
     case "third": {
-      // Derive pillar_slug, secondary_slug and final slug from sitemap node URL
+      // Derive pillar_slug, secondary_slug and slug from sitemap node URL
       // e.g. /trazabilidad/tipos/hacia-adelante → pillar=trazabilidad, secondary=tipos, slug=hacia-adelante
       let pillar_slug = ""
       let secondary_slug = ""
       let thirdSlug = clean.slug || ""
 
-      const sitemapNode = (memory.sitemap_nodes || []).find((n: any) => n.page_id === page.id)
-      if (sitemapNode?.url) {
-        const parts = sitemapNode.url.replace(/^\//, "").split("/")
+      const url = sitemapNode?.url || (clean.slug?.includes("/") ? `/${clean.slug}` : "")
+      if (url) {
+        const parts = url.replace(/^\//, "").split("/").filter(Boolean)
         if (parts.length >= 3) { pillar_slug = parts[0]; secondary_slug = parts[1]; thirdSlug = parts[2] }
         else if (parts.length === 2) { pillar_slug = parts[0]; thirdSlug = parts[1] }
-      } else if (clean.slug?.includes("/")) {
-        const parts = clean.slug.split("/")
-        if (parts.length >= 3) { pillar_slug = parts[0]; secondary_slug = parts[1]; thirdSlug = parts[2] }
-        else if (parts.length === 2) { pillar_slug = parts[0]; thirdSlug = parts[1] }
+        else if (parts.length === 1) { thirdSlug = parts[0] }
       }
 
       return {
