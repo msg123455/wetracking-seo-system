@@ -1364,7 +1364,7 @@ function ListBlock({ items, ordered }: { items: string[]; ordered: boolean }) {
       <span style={{ flexShrink:0, padding:"2px 7px", borderRadius:4, fontSize:9, fontWeight:700, background:"#f5f5f5", color:"#888", fontFamily:"monospace", border:"1px solid #e0e0e0" }}>{ordered ? "steps" : "list"}</span>
       <Tag style={{ margin:0, paddingLeft:16 }}>
         {items.map((item, i) => (
-          <li key={i} style={{ fontSize:12, color:"#444", marginBottom:3, lineHeight:1.6 }}>{item}</li>
+          <li key={i} style={{ fontSize:12, color:"#444", marginBottom:10, lineHeight:1.7 }}>{item}</li>
         ))}
       </Tag>
     </div>
