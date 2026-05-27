@@ -22,7 +22,8 @@ REGLAS DE CONTENIDO (OBLIGATORIAS):
 7. El cta_text: maximo 6 palabras. Solo la accion. Ej: "Habla con un especialista hoy." o "Implementalo en tu empresa."
 8. Todo en español latinoamericano, tono profesional pero accesible.
 9. PROHIBIDO usar el guion largo (—). Nunca uses el caracter — en ningun campo. Ni en titulos, ni en parrafos, ni en ejemplos. Si necesitas separar ideas usa coma o dos puntos.
-10. Cuando uses estadísticas o cifras del CONTEXTO DE INVESTIGACION, atribúyelas con la fuente entre paréntesis al final de la oración. Ejemplo: "...en 2023 (Fuente: OPS)." Si no tienes fuente verificable, no inventes el número.`
+10. Cuando uses estadísticas o cifras del CONTEXTO DE INVESTIGACION, atribúyelas con la fuente entre paréntesis al final de la oración. Ejemplo: "...en 2023 (Fuente: OPS)." Si no tienes fuente verificable, no inventes el número.
+11. PROHIBIDO el keyword stuffing: no repitas la keyword principal de forma artificial ni más de 4 veces en el cuerpo. Varía con sinónimos, frases relacionadas y términos semánticos del mismo campo. El texto debe leerse con fluidez natural — Google penaliza la repetición excesiva de keywords.`
 
   const PATRON_SECCION = `
 Patrón por cada subtema — elige el mix visual que encaje con el contenido:

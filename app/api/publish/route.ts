@@ -141,6 +141,39 @@ function injectMarkdownLinks(sections: any[], links: { anchor: string; url: stri
   })
 }
 
+// Build schema.org BreadcrumbList from a URL path like /trazabilidad/tipos/hacia-adelante
+// Cross-references sitemap_nodes to get human-readable keyword labels for each segment
+function buildBreadcrumbSchema(urlPath: string, memory: any): object {
+  const BASE = "https://wetracking.co"
+  const segments = urlPath.replace(/^\//, "").split("/").filter(Boolean)
+  const nodes: any[] = memory.sitemap_nodes || []
+
+  const items: object[] = [
+    { "@type": "ListItem", position: 1, name: "Inicio", item: BASE },
+  ]
+
+  let cumulativePath = ""
+  segments.forEach((seg, idx) => {
+    cumulativePath += `/${seg}`
+    const node = nodes.find((n: any) => n.url === cumulativePath)
+    const name = node?.keyword
+      ? node.keyword.charAt(0).toUpperCase() + node.keyword.slice(1)
+      : seg.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+    items.push({
+      "@type": "ListItem",
+      position: idx + 2,
+      name,
+      item: `${BASE}${cumulativePath}`,
+    })
+  })
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items,
+  }
+}
+
 // Strip internal-only fields before sending to Base44
 function cleanContent(content: any): any {
   const { suggested_links, external_sources, image_suggestions, ...rest } = content
@@ -182,6 +215,28 @@ async function getEntityConfig(page: any, memory: any): Promise<{ entity: string
 
   // Always look up the sitemap node — its URL is the source of truth for slugs
   const sitemapNode = (memory.sitemap_nodes || []).find((n: any) => n.page_id === page.id)
+
+  // At publish time we know the canonical URL — enrich schema_jsonld with it + BreadcrumbList
+  // This enables rich results (breadcrumbs) and correct Article schema in Google Search
+  if (sitemapNode?.url && clean.schema_jsonld) {
+    const BASE = "https://wetracking.co"
+    const canonicalUrl = `${BASE}${sitemapNode.url.startsWith("/") ? sitemapNode.url : "/" + sitemapNode.url}`
+    const breadcrumb = buildBreadcrumbSchema(sitemapNode.url, memory)
+
+    const enrichArticle = (s: any) => ({
+      ...s,
+      url: canonicalUrl,
+      mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
+    })
+
+    if (Array.isArray(clean.schema_jsonld)) {
+      clean.schema_jsonld = [enrichArticle(clean.schema_jsonld[0]), ...clean.schema_jsonld.slice(1), breadcrumb]
+    } else {
+      clean.schema_jsonld = [enrichArticle(clean.schema_jsonld), breadcrumb]
+    }
+
+    clean.canonical_url = canonicalUrl
+  }
 
   // Helper: extract last URL segment as slug
   function lastSegment(url: string): string {
