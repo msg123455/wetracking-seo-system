@@ -23,9 +23,10 @@ type SitemapNode = {
 }
 type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
 
-type Tab = "dashboard" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
+type Tab = "dashboard" | "activity" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
 type GeneratedImage = { id: string; url: string; description: string; created_at: string }
 type ProgressItem  = { text: string; detail?: string; status: "pending" | "running" | "done" | "error" }
+type ProgressLog   = { id: string; title: string; success: boolean; completedAt: string }
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
   pillar:    { label: "Pillar",    color: "#6f42c1", bg: "#f3eeff" },
@@ -109,11 +110,13 @@ export default function SEOCommandCenter() {
   const [updatingPages, setUpdatingPages] = useState<Record<string, boolean>>({})
   const [updateFilter,  setUpdateFilter]  = useState<"all"|"critical"|"review"|"ok">("all")
 
-  // progress panel
-  const [progressItems, setProgressItems] = useState<ProgressItem[]>([])
-  const [progressTitle, setProgressTitle] = useState("")
-  const [showProgress,  setShowProgress]  = useState(false)
-  const progressLogRef = useRef<HTMLDivElement>(null)
+  // activity module
+  const [progressItems,   setProgressItems]   = useState<ProgressItem[]>([])
+  const [progressTitle,   setProgressTitle]   = useState("")
+  const [progressDone,    setProgressDone]    = useState<boolean | null>(null)
+  const [progressHistory, setProgressHistory] = useState<ProgressLog[]>([])
+  const progressTitleRef  = useRef("")
+  const progressLogRef    = useRef<HTMLDivElement>(null)
 
   // global loading + messages
   const [loading,      setLoading]      = useState(false)
@@ -154,11 +157,13 @@ export default function SEOCommandCenter() {
     setMessage({ text, type })
   }
 
-  // ── Progress tracking ──
+  // ── Progress tracking (Activity module) ──
   function startProgress(title: string) {
     setProgressItems([])
     setProgressTitle(title)
-    setShowProgress(true)
+    setProgressDone(null)
+    progressTitleRef.current = title
+    setTab("activity")
   }
 
   function addProgressStep(text: string, detail?: string) {
@@ -172,7 +177,11 @@ export default function SEOCommandCenter() {
     setProgressItems(prev => prev.map(item =>
       item.status === "running" ? { ...item, status: success ? "done" as const : "error" as const } : item
     ))
-    if (success) setTimeout(() => setShowProgress(false), 5000)
+    setProgressDone(success)
+    setProgressHistory(hist => [
+      { id: Date.now().toString(), title: progressTitleRef.current, success, completedAt: new Date().toISOString() },
+      ...hist.slice(0, 14),
+    ])
   }
 
   async function readSSE(
@@ -507,6 +516,7 @@ export default function SEOCommandCenter() {
   const NAV_GROUPS = [
     { section: null, items: [
       { key:"dashboard", label:"Dashboard" },
+      { key:"activity",  label:"Actividad", dot: loading, alertRed: progressDone === false },
     ]},
     { section: "CONTENIDO", items: [
       { key:"sitemapbuild", label:"Estructura SEO",  count: sitemapDefs.length },
@@ -591,6 +601,130 @@ export default function SEOCommandCenter() {
 
         {/* ── Main content ── */}
         <div style={{ flex:1, overflowY:"auto", padding:"28px 32px" }}>
+
+        {/* ══ ACTIVIDAD ══ */}
+        {tab==="activity" && (
+          <div>
+            <div style={{ marginBottom:24, display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div>
+                <h2 style={{ ...H2, marginBottom:4 }}>Actividad del Sistema</h2>
+                <p style={{ color:"#888", fontSize:13, margin:0 }}>
+                  Cada operacion de research y generacion aparece aqui en tiempo real.
+                </p>
+              </div>
+              {progressItems.length > 0 && progressDone !== null && (
+                <button onClick={() => { setProgressItems([]); setProgressTitle(""); setProgressDone(null) }}
+                  style={BTN_GHOST}>Limpiar</button>
+              )}
+            </div>
+
+            {/* ── Operacion activa ── */}
+            {progressTitle && (
+              <div style={{ background:"white", borderRadius:14, overflow:"hidden", marginBottom:22, border: progressDone === false ? "1px solid #f5c2c7" : progressDone === true ? "1px solid #a3e0c5" : "1px solid #dce3f0", boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}>
+                {/* Header strip */}
+                <div style={{
+                  background: progressDone === false ? "#dc3545" : progressDone === true ? "#146c43" : "#0b194f",
+                  padding:"14px 22px", display:"flex", alignItems:"center", gap:12,
+                }}>
+                  {loading
+                    ? <span className="pgSpin" style={{ color:"#00ffd7", fontSize:15, flexShrink:0 }}>◌</span>
+                    : <span style={{ color: progressDone === false ? "white" : "#00ffd7", fontSize:15, flexShrink:0 }}>
+                        {progressDone === false ? "✗" : "✓"}
+                      </span>
+                  }
+                  <div style={{ flex:1, overflow:"hidden" }}>
+                    <div style={{ color:"white", fontWeight:700, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {progressTitle}
+                    </div>
+                    <div style={{ color:"rgba(255,255,255,0.55)", fontSize:11, marginTop:2 }}>
+                      {loading ? "Procesando..." : progressDone === true ? "Completado exitosamente" : "Finalizado con error"}
+                    </div>
+                  </div>
+                  {progressDone === true && (
+                    <button onClick={() => setTab("pending")} style={{ background:"#00ffd7", color:"#0b194f", border:"none", borderRadius:7, padding:"8px 16px", cursor:"pointer", fontWeight:700, fontSize:12, flexShrink:0 }}>
+                      Ver en Pendientes
+                    </button>
+                  )}
+                </div>
+
+                {/* Steps log */}
+                <div ref={progressLogRef} style={{ padding:"18px 22px", maxHeight:480, overflowY:"auto", display:"flex", flexDirection:"column", gap:10 }}>
+                  {progressItems.length === 0 && (
+                    <div style={{ color:"#bbb", fontSize:13, fontFamily:"monospace" }}>Iniciando...</div>
+                  )}
+                  {progressItems.map((item, i) => (
+                    <div key={i} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                      <span style={{
+                        flexShrink:0, width:18, textAlign:"center", marginTop:2, fontSize:13,
+                        color: item.status==="done" ? "#146c43" : item.status==="error" ? "#dc3545" : item.status==="running" ? "#856404" : "#aaa",
+                      }}>
+                        {item.status==="done" ? "✓" : item.status==="error" ? "✗" : item.status==="running" ? "▶" : "·"}
+                      </span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{
+                          fontSize:13, lineHeight:1.5,
+                          color: item.status==="done" ? "#444" : item.status==="error" ? "#dc3545" : item.status==="running" ? "#0b194f" : "#bbb",
+                          fontWeight: item.status==="running" ? 700 : 400,
+                        }}>
+                          {item.text}
+                        </div>
+                        {item.detail && (
+                          <div style={{ fontSize:11, color:"#aaa", marginTop:3, fontFamily:"monospace", wordBreak:"break-all" }}>
+                            {item.detail}
+                          </div>
+                        )}
+                      </div>
+                      {item.status === "running" && (
+                        <span className="pgSpin" style={{ color:"#856404", fontSize:12, flexShrink:0, marginTop:2 }}>◌</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Historial ── */}
+            {progressHistory.length > 0 && (
+              <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", overflow:"hidden" }}>
+                <div style={{ padding:"14px 20px", borderBottom:"1px solid #eee" }}>
+                  <span style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>Historial de operaciones</span>
+                </div>
+                <div style={{ padding:"8px 0" }}>
+                  {progressHistory.map((log, i) => (
+                    <div key={log.id} style={{
+                      display:"flex", alignItems:"center", gap:12,
+                      padding:"10px 20px", borderBottom: i < progressHistory.length - 1 ? "1px solid #f5f5f5" : "none",
+                    }}>
+                      <span style={{ fontSize:14, color: log.success ? "#146c43" : "#dc3545", flexShrink:0 }}>
+                        {log.success ? "✓" : "✗"}
+                      </span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, color:"#333", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {log.title}
+                        </div>
+                      </div>
+                      <span style={{ fontSize:11, color:"#aaa", flexShrink:0 }}>
+                        {(() => {
+                          const ms = Date.now() - new Date(log.completedAt).getTime()
+                          const mins = Math.floor(ms / 60000)
+                          if (mins < 1) return "ahora"
+                          if (mins < 60) return `hace ${mins} min`
+                          if (mins < 1440) return `hace ${Math.floor(mins/60)} h`
+                          return `hace ${Math.floor(mins/1440)} d`
+                        })()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Empty state ── */}
+            {!progressTitle && progressHistory.length === 0 && (
+              <Empty text="Sin actividad reciente. Cuando inicies un research o generacion de contenido, el proceso aparece aqui en tiempo real." />
+            )}
+          </div>
+        )}
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (
@@ -1647,74 +1781,6 @@ export default function SEOCommandCenter() {
         </div>
       </div>
 
-      {/* ── Progress Panel ── */}
-      {showProgress && (
-        <div style={{
-          position: "fixed", bottom: 24, right: 24, width: 420,
-          background: "#0d1b38", borderRadius: 14,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-          zIndex: 9999, overflow: "hidden",
-          border: "1px solid rgba(255,255,255,0.1)",
-          display: "flex", flexDirection: "column", maxHeight: 460,
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: "12px 16px", background: "#0b194f",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.07)",
-            gap: 10,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, overflow: "hidden" }}>
-              {loading
-                ? <span className="pgSpin" style={{ color: "#00ffd7", fontSize: 13, flexShrink: 0 }}>◌</span>
-                : <span style={{ color: "#00ffd7", fontSize: 13, flexShrink: 0 }}>✓</span>
-              }
-              <span style={{ color: "white", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {progressTitle}
-              </span>
-            </div>
-            {!loading && (
-              <button onClick={() => setShowProgress(false)} style={{
-                background: "none", border: "none", cursor: "pointer",
-                color: "rgba(255,255,255,0.45)", fontSize: 18, lineHeight: 1, padding: "0 2px", flexShrink: 0,
-              }}>×</button>
-            )}
-          </div>
-          {/* Log */}
-          <div ref={progressLogRef} style={{
-            padding: "14px 16px", overflowY: "auto", flex: 1,
-            display: "flex", flexDirection: "column", gap: 8,
-          }}>
-            {progressItems.length === 0 && (
-              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 12, fontFamily: "monospace" }}>Iniciando...</div>
-            )}
-            {progressItems.map((item, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{
-                  flexShrink: 0, width: 16, textAlign: "center", marginTop: 1, fontSize: 12,
-                  color: item.status === "done" ? "#00ffd7" : item.status === "error" ? "#ff6b6b" : item.status === "running" ? "#ffd700" : "rgba(255,255,255,0.2)",
-                }}>
-                  {item.status === "done" ? "✓" : item.status === "error" ? "✗" : item.status === "running" ? "▶" : "·"}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 12, fontFamily: "monospace", lineHeight: 1.5,
-                    color: item.status === "done" ? "rgba(255,255,255,0.55)" : item.status === "error" ? "#ff9999" : item.status === "running" ? "white" : "rgba(255,255,255,0.25)",
-                    fontWeight: item.status === "running" ? 600 : 400,
-                  }}>
-                    {item.text}
-                  </div>
-                  {item.detail && (
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2, fontFamily: "monospace", wordBreak: "break-all" }}>
-                      {item.detail}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
