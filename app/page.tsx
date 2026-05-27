@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 // ── Types ──
 type Keyword   = { id: string; keyword: string; volume: string; difficulty: string; intent: string }
@@ -25,6 +25,7 @@ type SitemapDef = { id: string; name: string; root_keyword: string; industry: st
 
 type Tab = "dashboard" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
 type GeneratedImage = { id: string; url: string; description: string; created_at: string }
+type ProgressItem  = { text: string; detail?: string; status: "pending" | "running" | "done" | "error" }
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
   pillar:    { label: "Pillar",    color: "#6f42c1", bg: "#f3eeff" },
@@ -108,11 +109,20 @@ export default function SEOCommandCenter() {
   const [updatingPages, setUpdatingPages] = useState<Record<string, boolean>>({})
   const [updateFilter,  setUpdateFilter]  = useState<"all"|"critical"|"review"|"ok">("all")
 
+  // progress panel
+  const [progressItems, setProgressItems] = useState<ProgressItem[]>([])
+  const [progressTitle, setProgressTitle] = useState("")
+  const [showProgress,  setShowProgress]  = useState(false)
+  const progressLogRef = useRef<HTMLDivElement>(null)
+
   // global loading + messages
   const [loading,      setLoading]      = useState(false)
   const [message,      setMessage]      = useState<{text:string;type:"success"|"error"|"info"}|null>(null)
 
   useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (progressLogRef.current) progressLogRef.current.scrollTop = progressLogRef.current.scrollHeight
+  }, [progressItems])
 
   async function loadData() {
     try {
@@ -144,6 +154,69 @@ export default function SEOCommandCenter() {
     setMessage({ text, type })
   }
 
+  // ── Progress tracking ──
+  function startProgress(title: string) {
+    setProgressItems([])
+    setProgressTitle(title)
+    setShowProgress(true)
+  }
+
+  function addProgressStep(text: string, detail?: string) {
+    setProgressItems(prev => [
+      ...prev.map(item => item.status === "running" ? { ...item, status: "done" as const } : item),
+      { text, detail, status: "running" as const },
+    ])
+  }
+
+  function finishProgress(success: boolean) {
+    setProgressItems(prev => prev.map(item =>
+      item.status === "running" ? { ...item, status: success ? "done" as const : "error" as const } : item
+    ))
+    if (success) setTimeout(() => setShowProgress(false), 5000)
+  }
+
+  async function readSSE(
+    url: string,
+    body: any,
+    onStep: (text: string, detail?: string) => void
+  ): Promise<any> {
+    const res = await fetch(url, { method: "POST", headers: jsonHdr, body: JSON.stringify(body) })
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    let result: any = null
+    let resultFound = false
+    let errorMsg: string | null = null
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const blocks = buffer.split("\n\n")
+        buffer = blocks.pop() ?? ""
+        for (const block of blocks) {
+          const dataLine = block.split("\n").find((l: string) => l.startsWith("data: "))
+          if (!dataLine) continue
+          try {
+            const msg = JSON.parse(dataLine.slice(6))
+            if (msg.event === "step") onStep(msg.text, msg.detail)
+            else if (msg.event === "done") { result = msg.data; resultFound = true }
+            else if (msg.event === "error") errorMsg = msg.text
+          } catch { /* malformed chunk, skip */ }
+        }
+      }
+    } finally {
+      try { reader.releaseLock() } catch { /* already released */ }
+    }
+    if (errorMsg) throw new Error(errorMsg)
+    if (!resultFound) throw new Error("Stream finalizado sin respuesta del servidor")
+    return result
+  }
+
   // ── Keywords ──
   async function addKeyword() {
     const kw = newKeyword.trim(); if (!kw) return
@@ -173,13 +246,14 @@ export default function SEOCommandCenter() {
   // ── Research ──
   async function runResearch() {
     if (!resTopic.trim()) return
-    setLoading(true); notify("Investigando con Perplexity...", "info")
+    startProgress(`Research: "${resTopic}"`)
+    setLoading(true)
     try {
-      const r = await fetch("/api/research", { method:"POST", headers:jsonHdr, body: JSON.stringify({ topic:resTopic, depth:resDepth }) })
-      const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`Investigacion completada: "${resTopic}"`, "success")
+      const research = await readSSE("/api/research", { topic: resTopic, depth: resDepth }, addProgressStep)
+      finishProgress(true)
+      notify(`Research completado: "${resTopic}" (${research.sources_scraped || 0} fuentes)`, "success")
       setResTopic(""); loadData()
-    } catch (e: any) { notify("Error: " + e.message, "error") }
+    } catch (e: any) { finishProgress(false); notify("Error: " + e.message, "error") }
     setLoading(false)
   }
 
@@ -212,81 +286,68 @@ export default function SEOCommandCenter() {
 
   async function generateFromNode(node: SitemapNode, research_id?: string) {
     const activeSitemap = sitemapDefs.find(s => s.id === node.sitemap_id)
-    setLoading(true); notify(`Generando "${node.keyword}"...`, "info")
+    startProgress(`Generando: "${node.keyword}"`)
+    setLoading(true)
     try {
-      const r = await fetch("/api/generate-content", {
-        method:"POST", headers:jsonHdr,
-        body: JSON.stringify({
-          keyword: node.keyword,
-          page_type: node.page_type,
-          industry: activeSitemap?.industry || "RFID general",
-          cluster_id: "default",
-          pillar_id: "default",
-          research_id: research_id || undefined,
-        }),
-      })
-      const d = await r.json(); if (!r.ok) throw new Error(d.error)
+      const page = await readSSE("/api/generate-content", {
+        keyword: node.keyword,
+        page_type: node.page_type,
+        industry: activeSitemap?.industry || "RFID general",
+        cluster_id: "default",
+        pillar_id: "default",
+        research_id: research_id || undefined,
+      }, addProgressStep)
       await fetch("/api/sitemap-builder", {
-        method:"PATCH", headers:jsonHdr,
-        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: d.id }),
+        method: "PATCH", headers: jsonHdr,
+        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: page.id }),
       })
+      finishProgress(true)
       notify(`Contenido listo para "${node.keyword}" — ver en Pendientes`, "success")
       loadData()
-    } catch (e: any) { notify("Error: " + e.message, "error") }
+    } catch (e: any) { finishProgress(false); notify("Error: " + e.message, "error") }
     setLoading(false)
   }
 
   async function researchAndGenerate(node: SitemapNode) {
     const activeSitemap = sitemapDefs.find(s => s.id === node.sitemap_id)
+    startProgress(`Research + Generar: "${node.keyword}"`)
     setLoading(true)
-    notify(`Investigando competidores para "${node.keyword}"...`, "info")
     try {
-      // Step 1: Perplexity + scrape competitors
-      const rr = await fetch("/api/research", {
-        method:"POST", headers:jsonHdr,
-        body: JSON.stringify({ topic: node.keyword, depth: "deep" }),
-      })
-      const rd = await rr.json(); if (!rr.ok) throw new Error(rd.error)
-      notify(`Research listo (${rd.sources_scraped || 0} paginas analizadas). Generando contenido...`, "info")
-
-      // Step 2: Generate using research context
-      const gr = await fetch("/api/generate-content", {
-        method:"POST", headers:jsonHdr,
-        body: JSON.stringify({
-          keyword: node.keyword,
-          page_type: node.page_type,
-          industry: activeSitemap?.industry || "RFID general",
-          cluster_id: "default",
-          pillar_id: "default",
-          research_id: rd.id,
-        }),
-      })
-      const gd = await gr.json(); if (!gr.ok) throw new Error(gd.error)
+      const research = await readSSE("/api/research", { topic: node.keyword, depth: "deep" }, addProgressStep)
+      const page = await readSSE("/api/generate-content", {
+        keyword: node.keyword,
+        page_type: node.page_type,
+        industry: activeSitemap?.industry || "RFID general",
+        cluster_id: "default",
+        pillar_id: "default",
+        research_id: research.id,
+      }, addProgressStep)
       await fetch("/api/sitemap-builder", {
-        method:"PATCH", headers:jsonHdr,
-        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: gd.id }),
+        method: "PATCH", headers: jsonHdr,
+        body: JSON.stringify({ node_id: node.id, status: "generated", page_id: page.id }),
       })
-      notify(`Contenido listo para "${node.keyword}" con analisis de competidores`, "success")
+      finishProgress(true)
+      notify(`Contenido listo para "${node.keyword}" — ver en Pendientes`, "success")
       loadData()
-    } catch (e: any) { notify("Error: " + e.message, "error") }
+    } catch (e: any) { finishProgress(false); notify("Error: " + e.message, "error") }
     setLoading(false)
   }
 
   // ── Generate content ──
   async function generateContent() {
     if (!genKeyword.trim()) return
-    setLoading(true); notify("Generando contenido con Claude...", "info")
+    startProgress(`Generando: "${genKeyword}"`)
+    setLoading(true)
     try {
-      const r = await fetch("/api/generate-content", {
-        method:"POST", headers:jsonHdr,
-        body: JSON.stringify({ keyword:genKeyword, page_type:genType, industry:genIndustry,
-          cluster_id:genCluster||"default", pillar_id:genPillar||"default",
-          research_id:genResearch||undefined }),
-      })
-      const d = await r.json(); if (!r.ok) throw new Error(d.error)
-      notify(`Contenido generado para "${genKeyword}"`, "success")
+      const page = await readSSE("/api/generate-content", {
+        keyword: genKeyword, page_type: genType, industry: genIndustry,
+        cluster_id: genCluster || "default", pillar_id: genPillar || "default",
+        research_id: genResearch || undefined,
+      }, addProgressStep)
+      finishProgress(true)
+      notify(`Pagina "${genKeyword}" lista para revision`, "success")
       setGenKeyword(""); setTab("pending"); loadData()
-    } catch (e: any) { notify("Error: " + e.message, "error") }
+    } catch (e: any) { finishProgress(false); notify("Error: " + e.message, "error") }
     setLoading(false)
   }
 
@@ -378,41 +439,29 @@ export default function SEOCommandCenter() {
   async function refreshPublishedPage(entry: SitemapEntry) {
     if (!entry.id) return
     const nodeForPage = sitemapNodes.find(n => n.page_id === entry.id)
-
+    startProgress(`Actualizando: "${entry.keyword}"`)
     setUpdatingPages(prev => ({ ...prev, [entry.id!]: true }))
     setLoading(true)
-    notify(`Actualizando "${entry.keyword}" — investigando con Perplexity...`, "info")
     try {
-      const rr = await fetch("/api/research", {
-        method: "POST", headers: jsonHdr,
-        body: JSON.stringify({ topic: entry.keyword, depth: "deep" }),
-      })
-      const rd = await rr.json(); if (!rr.ok) throw new Error(rd.error)
-      notify(`Research listo (${rd.sources_scraped || 0} fuentes). Generando nueva version...`, "info")
-
-      const gr = await fetch("/api/generate-content", {
-        method: "POST", headers: jsonHdr,
-        body: JSON.stringify({
-          keyword: entry.keyword,
-          page_type: entry.page_type || "pillar",
-          industry: "RFID general",
-          cluster_id: entry.cluster_id || "default",
-          pillar_id: "default",
-          research_id: rd.id,
-        }),
-      })
-      const gd = await gr.json(); if (!gr.ok) throw new Error(gd.error)
-
+      const research = await readSSE("/api/research", { topic: entry.keyword, depth: "deep" }, addProgressStep)
+      const page = await readSSE("/api/generate-content", {
+        keyword: entry.keyword,
+        page_type: entry.page_type || "pillar",
+        industry: "RFID general",
+        cluster_id: entry.cluster_id || "default",
+        pillar_id: "default",
+        research_id: research.id,
+      }, addProgressStep)
       if (nodeForPage) {
         await fetch("/api/sitemap-builder", {
           method: "PATCH", headers: jsonHdr,
-          body: JSON.stringify({ node_id: nodeForPage.id, status: "generated", page_id: gd.id }),
+          body: JSON.stringify({ node_id: nodeForPage.id, status: "generated", page_id: page.id }),
         })
       }
+      finishProgress(true)
       notify(`Nueva version lista para "${entry.keyword}" — revisa en Pendientes`, "success")
-      setTab("pending")
-      loadData()
-    } catch (e: any) { notify("Error al actualizar: " + e.message, "error") }
+      setTab("pending"); loadData()
+    } catch (e: any) { finishProgress(false); notify("Error al actualizar: " + e.message, "error") }
     setUpdatingPages(prev => ({ ...prev, [entry.id!]: false }))
     setLoading(false)
   }
@@ -482,6 +531,7 @@ export default function SEOCommandCenter() {
 
   return (
     <div style={{ fontFamily:"system-ui,sans-serif", height:"100vh", display:"flex", flexDirection:"column", overflow:"hidden", background:"#f0f2f7" }}>
+      <style>{`@keyframes pgSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}.pgSpin{animation:pgSpin 0.7s linear infinite;display:inline-block}`}</style>
 
       {/* ── Header ── */}
       <div style={{ background:"#0b194f", padding:"0 22px", height:50, display:"flex", alignItems:"center", gap:12, flexShrink:0, borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
@@ -1596,6 +1646,75 @@ export default function SEOCommandCenter() {
 
         </div>
       </div>
+
+      {/* ── Progress Panel ── */}
+      {showProgress && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, width: 420,
+          background: "#0d1b38", borderRadius: 14,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
+          zIndex: 9999, overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.1)",
+          display: "flex", flexDirection: "column", maxHeight: 460,
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: "12px 16px", background: "#0b194f",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.07)",
+            gap: 10,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, overflow: "hidden" }}>
+              {loading
+                ? <span className="pgSpin" style={{ color: "#00ffd7", fontSize: 13, flexShrink: 0 }}>◌</span>
+                : <span style={{ color: "#00ffd7", fontSize: 13, flexShrink: 0 }}>✓</span>
+              }
+              <span style={{ color: "white", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {progressTitle}
+              </span>
+            </div>
+            {!loading && (
+              <button onClick={() => setShowProgress(false)} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "rgba(255,255,255,0.45)", fontSize: 18, lineHeight: 1, padding: "0 2px", flexShrink: 0,
+              }}>×</button>
+            )}
+          </div>
+          {/* Log */}
+          <div ref={progressLogRef} style={{
+            padding: "14px 16px", overflowY: "auto", flex: 1,
+            display: "flex", flexDirection: "column", gap: 8,
+          }}>
+            {progressItems.length === 0 && (
+              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 12, fontFamily: "monospace" }}>Iniciando...</div>
+            )}
+            {progressItems.map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{
+                  flexShrink: 0, width: 16, textAlign: "center", marginTop: 1, fontSize: 12,
+                  color: item.status === "done" ? "#00ffd7" : item.status === "error" ? "#ff6b6b" : item.status === "running" ? "#ffd700" : "rgba(255,255,255,0.2)",
+                }}>
+                  {item.status === "done" ? "✓" : item.status === "error" ? "✗" : item.status === "running" ? "▶" : "·"}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 12, fontFamily: "monospace", lineHeight: 1.5,
+                    color: item.status === "done" ? "rgba(255,255,255,0.55)" : item.status === "error" ? "#ff9999" : item.status === "running" ? "white" : "rgba(255,255,255,0.25)",
+                    fontWeight: item.status === "running" ? 600 : 400,
+                  }}>
+                    {item.text}
+                  </div>
+                  {item.detail && (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2, fontFamily: "monospace", wordBreak: "break-all" }}>
+                      {item.detail}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

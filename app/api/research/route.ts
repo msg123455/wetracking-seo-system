@@ -10,7 +10,6 @@ const perplexity = new OpenAI({
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// Fetch and extract plain text from a URL
 async function fetchPageText(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
@@ -38,7 +37,6 @@ async function fetchPageText(url: string): Promise<string> {
   }
 }
 
-// Run Claude competitive analysis on scraped pages
 async function analyzeCompetitors(topic: string, pages: { url: string; text: string }[]): Promise<any> {
   const validPages = pages.filter(p => p.text.length > 200)
   if (validPages.length === 0) return null
@@ -119,13 +117,23 @@ Devuelve SOLO JSON sin markdown ni explicaciones:
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const { topic, depth = "basic" } = await req.json()
-    if (!topic?.trim()) return Response.json({ error: "topic requerido" }, { status: 400 })
+  const { topic, depth = "basic" } = await req.json()
+  if (!topic?.trim()) return Response.json({ error: "topic requerido" }, { status: 400 })
 
-    const prompt =
-      depth === "deep"
-        ? `Eres un investigador SEO senior. Investiga exhaustivamente: "${topic}" con foco en Colombia y Latinoamerica.
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (event: string, data: Record<string, any>) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event, ...data })}\n\n`))
+      const step = (text: string, detail?: string) =>
+        emit("step", detail !== undefined ? { text, detail } : { text })
+
+      try {
+        const scrapeLimit = depth === "deep" ? 10 : 5
+
+        const prompt = depth === "deep"
+          ? `Eres un investigador SEO senior. Investiga exhaustivamente: "${topic}" con foco en Colombia y Latinoamerica.
 
 DEVUELVE SOLO JSON sin markdown:
 {
@@ -161,7 +169,7 @@ DEVUELVE SOLO JSON sin markdown:
   "regulatory_context": "Normativa o regulacion relevante en Colombia/LATAM para este tema",
   "local_context": "Contexto especifico de Colombia: industria, mercado, adoption rate, retos locales"
 }`
-        : `Investiga brevemente: "${topic}"
+          : `Investiga brevemente: "${topic}"
 
 DEVUELVE SOLO JSON sin markdown:
 {
@@ -174,58 +182,90 @@ DEVUELVE SOLO JSON sin markdown:
   "content_angles": ["angulo 1", "angulo 2"]
 }`
 
-    // Step 1: main research + PAA extraction in parallel
-    const [response, paaData] = await Promise.all([
-      perplexity.chat.completions.create({
-        model: "sonar-pro",
-        messages: [{ role: "user", content: prompt }],
-      }),
-      fetchGooglePAA(topic),
-    ])
+        step(`Consultando Perplexity sonar-pro${depth === "deep" ? " (investigacion profunda)" : ""}...`)
 
-    const raw = response.choices[0].message.content || ""
-    const clean = raw.replace(/```json\n?|```/g, "").trim()
-    const data = JSON.parse(clean)
+        const [response, paaData] = await Promise.all([
+          perplexity.chat.completions.create({
+            model: "sonar-pro",
+            messages: [{ role: "user", content: prompt }],
+          }),
+          fetchGooglePAA(topic),
+        ])
 
-    // Step 2: citation URLs
-    const citations: string[] = (response as any).citations || []
-    const scrapeLimit = depth === "deep" ? 10 : 5
-    data.sources = citations.slice(0, scrapeLimit + 2)
-    data.paa_questions = paaData.paa
-    data.related_searches = paaData.related
+        step("Extrayendo datos y fuentes de investigacion...")
+        const raw = response.choices[0].message.content || ""
+        const clean = raw.replace(/```json\n?|```/g, "").trim()
+        const data = JSON.parse(clean)
+        const citations: string[] = (response as any).citations || []
+        data.sources = citations.slice(0, scrapeLimit + 2)
+        data.paa_questions = paaData.paa
+        data.related_searches = paaData.related
 
-    // Step 3: scrape citation pages
-    let competitor_analysis = null
-    if (citations.length > 0) {
-      const pages = await Promise.all(
-        citations.slice(0, scrapeLimit).map(async (url: string) => ({
-          url,
-          text: await fetchPageText(url),
-        }))
-      )
-      competitor_analysis = await analyzeCompetitors(topic, pages)
-    }
+        if (paaData.paa.length > 0) {
+          step(`${paaData.paa.length} preguntas "People Also Ask" encontradas`, paaData.paa.slice(0, 2).join(" | "))
+        }
 
-    const memory = readMemory()
-    const research = {
-      id: Date.now().toString(),
-      topic,
-      depth,
-      data,
-      competitor_analysis,
-      sources_scraped: citations.slice(0, scrapeLimit).length,
-      created_at: new Date().toISOString(),
-    }
-    if (!memory.research) memory.research = []
-    memory.research.unshift(research)
-    memory.last_updated = new Date().toISOString()
-    writeMemory(memory)
+        let competitor_analysis = null
+        if (citations.length > 0) {
+          const hosts = citations.slice(0, 3).map((u: string) => {
+            try { return new URL(u).hostname.replace("www.", "") } catch { return u.substring(0, 25) }
+          })
+          step(
+            `Scrapeando ${Math.min(citations.length, scrapeLimit)} paginas competidoras...`,
+            hosts.join(", ") + (citations.length > 3 ? " ..." : "")
+          )
 
-    return Response.json(research)
-  } catch (e: any) {
-    console.error("research error:", e)
-    return Response.json({ error: e.message }, { status: 500 })
-  }
+          const pages = await Promise.all(
+            citations.slice(0, scrapeLimit).map(async (url: string) => ({
+              url,
+              text: await fetchPageText(url),
+            }))
+          )
+
+          step("Analizando competidores con Claude Sonnet...")
+          competitor_analysis = await analyzeCompetitors(topic, pages)
+
+          if (competitor_analysis?.content_gaps?.length) {
+            step(
+              "Gaps de contenido detectados",
+              competitor_analysis.content_gaps.slice(0, 3).join(" | ")
+            )
+          }
+        }
+
+        step("Guardando research en memoria...")
+        const memory = readMemory()
+        const research = {
+          id: Date.now().toString(),
+          topic,
+          depth,
+          data,
+          competitor_analysis,
+          sources_scraped: citations.slice(0, scrapeLimit).length,
+          created_at: new Date().toISOString(),
+        }
+        if (!memory.research) memory.research = []
+        memory.research.unshift(research)
+        memory.last_updated = new Date().toISOString()
+        writeMemory(memory)
+
+        emit("done", { data: research })
+      } catch (e: any) {
+        console.error("research error:", e)
+        emit("error", { text: e.message || "Error en research" })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    },
+  })
 }
 
 export async function DELETE(req: NextRequest) {

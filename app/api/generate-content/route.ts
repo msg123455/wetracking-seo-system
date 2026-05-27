@@ -433,164 +433,173 @@ function removeEmDash(val: any): any {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const { keyword, page_type, industry, cluster_id, pillar_id, research_id } = await req.json()
+  const { keyword, page_type, industry, cluster_id, pillar_id, research_id } = await req.json()
 
-    if (!keyword?.trim()) {
-      return Response.json({ error: "keyword es requerido" }, { status: 400 })
-    }
+  if (!keyword?.trim()) {
+    return Response.json({ error: "keyword es requerido" }, { status: 400 })
+  }
 
-    const memory = readMemory()
+  const encoder = new TextEncoder()
 
-    // Context 1: sitemap — parent + sibling pages
-    const sitemapContext = buildSitemapContext(memory, keyword, page_type, cluster_id || "default", pillar_id || "default")
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (event: string, data: Record<string, any>) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event, ...data })}\n\n`))
+      const step = (text: string, detail?: string) =>
+        emit("step", detail !== undefined ? { text, detail } : { text })
 
-    // Context 2: research + competitor analysis
-    let researchContext = ""
-    if (research_id) {
-      const r = (memory.research || []).find((x: any) => x.id === research_id)
-      if (r) {
-        researchContext =
-          `\n\nCONTEXTO DE INVESTIGACION (usa estos datos en el contenido):\n` +
-          `Resumen: ${r.data.summary}\n` +
-          `Hechos clave: ${r.data.key_facts?.join(" | ")}\n` +
-          `Estadisticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
-          `Oportunidades SEO: ${r.data.seo_opportunities?.join(" | ")}\n`
+      try {
+        step("Leyendo contexto del sitemap...")
+        const memory = readMemory()
+        const sitemapContext = buildSitemapContext(memory, keyword, page_type, cluster_id || "default", pillar_id || "default")
 
-        // PAA questions from Google — instruction depends on page type
-        if (r.data.paa_questions?.length) {
-          researchContext +=
-            `\nPREGUNTAS REALES DE GOOGLE (People Also Ask):\n` +
-            r.data.paa_questions.map((q: string, i: number) => `${i + 1}. ${q}`).join("\n") + "\n"
+        let researchContext = ""
+        if (research_id) {
+          const r = (memory.research || []).find((x: any) => x.id === research_id)
+          if (r) {
+            step(
+              `Cargando research: "${r.topic}"...`,
+              `${r.data.key_facts?.length || 0} hechos | ${r.data.statistics?.length || 0} estadisticas | ${r.sources_scraped || 0} fuentes`
+            )
 
-          if (page_type === "third") {
-            researchContext += `INSTRUCCION: Absorbe las respuestas a estas preguntas dentro de los párrafos del H2 correspondiente. NO generes un bloque FAQ separado — enriquece el texto corrido con estas respuestas.\n`
-          } else {
-            researchContext += `USA estas preguntas como base para los faq_items — pueden adaptarse, reformularse o complementarse con preguntas propias. El objetivo es cubrir lo que la gente realmente busca en Google sobre este tema, más cualquier pregunta adicional genuinamente útil.\n`
+            researchContext =
+              `\n\nCONTEXTO DE INVESTIGACION (usa estos datos en el contenido):\n` +
+              `Resumen: ${r.data.summary}\n` +
+              `Hechos clave: ${r.data.key_facts?.join(" | ")}\n` +
+              `Estadisticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
+              `Oportunidades SEO: ${r.data.seo_opportunities?.join(" | ")}\n`
+
+            if (r.data.paa_questions?.length) {
+              researchContext +=
+                `\nPREGUNTAS REALES DE GOOGLE (People Also Ask):\n` +
+                r.data.paa_questions.map((q: string, i: number) => `${i + 1}. ${q}`).join("\n") + "\n"
+              if (page_type === "third") {
+                researchContext += `INSTRUCCION: Absorbe las respuestas a estas preguntas dentro de los párrafos del H2 correspondiente. NO generes un bloque FAQ separado — enriquece el texto corrido con estas respuestas.\n`
+              } else {
+                researchContext += `USA estas preguntas como base para los faq_items — pueden adaptarse, reformularse o complementarse con preguntas propias. El objetivo es cubrir lo que la gente realmente busca en Google sobre este tema, más cualquier pregunta adicional genuinamente útil.\n`
+              }
+            }
+
+            if (r.data.related_searches?.length) {
+              researchContext +=
+                `\nBUSQUEDAS RELACIONADAS EN GOOGLE (úsalas para inspirar subtemas, secciones o ángulos del contenido):\n` +
+                r.data.related_searches.join(" | ") + "\n"
+            }
+
+            if (r.data.regulatory_context) {
+              researchContext += `\nCONTEXTO REGULATORIO (usa esto para demostrar conocimiento normativo):\n${r.data.regulatory_context}\n`
+            }
+            if (r.data.local_context) {
+              researchContext += `\nCONTEXTO LOCAL COLOMBIA/LATAM (úsalo para aterrizar el contenido a la realidad regional):\n${r.data.local_context}\n`
+            }
+
+            if (r.competitor_analysis) {
+              const ca = r.competitor_analysis
+              researchContext +=
+                `\nANALISIS COMPETITIVO (paginas que ya rankean en Google para este tema):\n` +
+                `Temas que todos cubren (obligatorio incluir): ${ca.temas_comunes?.join(" | ")}\n` +
+                `Content gaps (lo que nadie cubre bien — diferenciacion): ${ca.content_gaps?.join(" | ")}\n` +
+                `Angulos unicos: ${ca.angulos_unicos_wetracking?.join(" | ")}\n` +
+                `Estructura recomendada H2s: ${ca.estructura_recomendada?.join(" | ")}\n` +
+                `Preguntas sin responder: ${ca.preguntas_sin_responder?.join(" | ")}\n` +
+                `Elementos de engagement: ${ca.elementos_engagement?.join(" | ")}\n` +
+                `\nINSTRUCCION: cubre los temas comunes Y explota los content gaps. Usa la estructura recomendada. Se mas especifico que cualquier competidor.\n`
+            }
           }
         }
 
-        // Related searches — use to inspire sections or keywords
-        if (r.data.related_searches?.length) {
-          researchContext +=
-            `\nBUSQUEDAS RELACIONADAS EN GOOGLE (úsalas para inspirar subtemas, secciones o ángulos del contenido):\n` +
-            r.data.related_searches.join(" | ") + "\n"
+        const maxTokens = page_type === "pillar" ? 16000 : page_type === "secondary" ? 12000 : 8000
+        step(
+          `Construyendo prompt "${page_type}"...`,
+          `Keyword: "${keyword}" | max ${maxTokens.toLocaleString()} tokens`
+        )
+
+        const allContext = sitemapContext + researchContext
+        const basePrompt = buildPrompt(keyword, page_type, industry)
+        const finalPrompt = allContext
+          ? basePrompt.replace("DEVUELVE SOLO JSON", `${allContext}\nDEVUELVE SOLO JSON`)
+          : basePrompt
+
+        step("Generando contenido con Claude Sonnet...", "Esto puede tomar 30-60 segundos")
+
+        const message = await client.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: maxTokens,
+          messages: [{ role: "user", content: finalPrompt }],
+        })
+
+        if (message.stop_reason === "max_tokens") {
+          emit("error", { text: "Contenido truncado por limite de tokens. Intenta con una keyword mas especifica o tipo de pagina menor." })
+          return
         }
 
-        // Regulatory and local context — key for E-E-A-T (Expertise + Trustworthiness)
-        if (r.data.regulatory_context) {
-          researchContext += `\nCONTEXTO REGULATORIO (usa esto para demostrar conocimiento normativo):\n${r.data.regulatory_context}\n`
-        }
-        if (r.data.local_context) {
-          researchContext += `\nCONTEXTO LOCAL COLOMBIA/LATAM (úsalo para aterrizar el contenido a la realidad regional):\n${r.data.local_context}\n`
+        step("Parseando respuesta JSON...")
+        const raw = message.content[0].type === "text" ? message.content[0].text : ""
+        const clean = raw.replace(/```json\n?|```/g, "").trim()
+        const content = removeEmDash(JSON.parse(clean))
+
+        content.schema_jsonld = buildSchemaJsonLd(content, page_type)
+        content.author = "Equipo WeTracking"
+        content.author_title = "Especialistas en Trazabilidad y Cadena de Suministro"
+
+        step("Detectando links internos con Claude Haiku...")
+        const sitemapNodes: any[] = memory.sitemap_nodes || []
+        const suggestedLinks = await detectInternalLinks(content.content_sections || [], sitemapNodes, keyword)
+
+        if (suggestedLinks.length > 0) {
+          step(`${suggestedLinks.length} links internos sugeridos`, suggestedLinks.slice(0, 3).map((l: any) => l.anchor).join(", "))
         }
 
-        if (r.competitor_analysis) {
-          const ca = r.competitor_analysis
-          researchContext +=
-            `\nANALISIS COMPETITIVO (paginas que ya rankean en Google para este tema):\n` +
-            `Temas que todos cubren (obligatorio incluir): ${ca.temas_comunes?.join(" | ")}\n` +
-            `Content gaps (lo que nadie cubre bien — diferenciacion): ${ca.content_gaps?.join(" | ")}\n` +
-            `Angulos unicos: ${ca.angulos_unicos_wetracking?.join(" | ")}\n` +
-            `Estructura recomendada H2s: ${ca.estructura_recomendada?.join(" | ")}\n` +
-            `Preguntas sin responder: ${ca.preguntas_sin_responder?.join(" | ")}\n` +
-            `Elementos de engagement: ${ca.elementos_engagement?.join(" | ")}\n` +
-            `\nINSTRUCCION: cubre los temas comunes Y explota los content gaps. Usa la estructura recomendada. Se mas especifico que cualquier competidor.\n`
+        let externalSources: { url: string; domain: string }[] = []
+        if (research_id) {
+          const r = (memory.research || []).find((x: any) => x.id === research_id)
+          const sources: string[] = r?.data?.sources || []
+          externalSources = sources.slice(0, 6).map((url: string) => ({
+            url,
+            domain: (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })(),
+          }))
         }
+
+        if (externalSources.length > 0 && (page_type === "pillar" || page_type === "secondary") && Array.isArray(content.content_sections)) {
+          const sourceLinks = externalSources.slice(0, 4).map((s: { url: string; domain: string }) => `[${s.domain}](${s.url})`).join(" | ")
+          content.content_sections.push({ type: "paragraph", content: `**Fuentes consultadas:** ${sourceLinks}`, alt_text: "" })
+        }
+
+        step("Guardando pagina en memoria...")
+        const page = {
+          id: Date.now().toString(),
+          keyword,
+          page_type,
+          industry,
+          cluster_id: cluster_id || "default",
+          pillar_id: pillar_id || "default",
+          content: {
+            ...content,
+            suggested_links: suggestedLinks,
+            external_sources: externalSources,
+          },
+          status: "pending_approval",
+          created_at: new Date().toISOString(),
+        }
+        memory.pending_approval.push(page)
+        memory.last_updated = new Date().toISOString()
+        writeMemory(memory)
+
+        emit("done", { data: page })
+      } catch (e: any) {
+        console.error("generate-content error:", e)
+        emit("error", { text: e.message || "Error generando contenido" })
+      } finally {
+        controller.close()
       }
-    }
+    },
+  })
 
-    const allContext = sitemapContext + researchContext
-
-    const basePrompt = buildPrompt(keyword, page_type, industry)
-    const finalPrompt = allContext ? basePrompt.replace(
-      "DEVUELVE SOLO JSON",
-      `${allContext}\nDEVUELVE SOLO JSON`
-    ) : basePrompt
-
-    // Pillar and secondary pages need more tokens (2500+ words + schema + context)
-    const maxTokens = page_type === "pillar" ? 16000 : page_type === "secondary" ? 12000 : 8000
-
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: finalPrompt }],
-    })
-
-    const raw = message.content[0].type === "text" ? message.content[0].text : ""
-    const clean = raw.replace(/```json\n?|```/g, "").trim()
-
-    // Detect truncated response before attempting parse
-    if (message.stop_reason === "max_tokens") {
-      console.error(`generate-content: respuesta truncada — aumentar max_tokens (page_type: ${page_type}, tokens usados: ${maxTokens})`)
-      return Response.json({ error: `Contenido truncado por limite de tokens. Intenta con una keyword mas especifica o un tipo de pagina menor (third en vez de pillar).` }, { status: 500 })
-    }
-
-    const content = removeEmDash(JSON.parse(clean))
-
-    // E-E-A-T: add structured data and author metadata server-side
-    content.schema_jsonld = buildSchemaJsonLd(content, page_type)
-    content.author = "Equipo WeTracking"
-    content.author_title = "Especialistas en Trazabilidad y Cadena de Suministro"
-
-    // Internal links — detect sitemap matches in the generated content (runs in parallel with nothing, fast Haiku call)
-    const sitemapNodes: any[] = memory.sitemap_nodes || []
-    const suggestedLinks = await detectInternalLinks(
-      content.content_sections || [],
-      sitemapNodes,
-      keyword
-    )
-
-    // External sources — citations from research (already available, no extra API call)
-    let externalSources: { url: string; domain: string }[] = []
-    if (research_id) {
-      const r = (memory.research || []).find((x: any) => x.id === research_id)
-      const sources: string[] = r?.data?.sources || []
-      externalSources = sources.slice(0, 6).map((url: string) => ({
-        url,
-        domain: (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })(),
-      }))
-    }
-
-    // E-E-A-T Trustworthiness: append a sources callout for pillar/secondary when research sources exist
-    if (
-      externalSources.length > 0 &&
-      (page_type === "pillar" || page_type === "secondary") &&
-      Array.isArray(content.content_sections)
-    ) {
-      const sourceLinks = externalSources
-        .slice(0, 4)
-        .map((s: { url: string; domain: string }) => `[${s.domain}](${s.url})`)
-        .join(" | ")
-      content.content_sections.push({
-        type: "paragraph",
-        content: `**Fuentes consultadas:** ${sourceLinks}`,
-        alt_text: "",
-      })
-    }
-
-    const page = {
-      id: Date.now().toString(),
-      keyword,
-      page_type,
-      industry,
-      cluster_id: cluster_id || "default",
-      pillar_id: pillar_id || "default",
-      content: {
-        ...content,
-        suggested_links: suggestedLinks,
-        external_sources: externalSources,
-      },
-      status: "pending_approval",
-      created_at: new Date().toISOString(),
-    }
-    memory.pending_approval.push(page)
-    memory.last_updated = new Date().toISOString()
-    writeMemory(memory)
-
-    return Response.json(page)
-  } catch (e: any) {
-    console.error("generate-content error:", e)
-    return Response.json({ error: e.message || "Error generando contenido" }, { status: 500 })
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    },
+  })
 }
