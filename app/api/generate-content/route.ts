@@ -160,7 +160,10 @@ Responde una sola intención de búsqueda muy específica con profundidad real. 
 ${REGLAS_CONTENIDO}
 ${PATRON_SECCION}
 
-DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo aparecen en sus tipos correspondientes.
+REGLA CRITICA PARA THIRD PAGES — ENRIQUECIMIENTO CON PREGUNTAS FRECUENTES:
+No generes un bloque FAQ separado. En cambio, usa las preguntas que la gente busca en Google sobre este tema para enriquecer los párrafos existentes. Cada párrafo debe anticipar y responder las dudas reales del lector dentro del texto corrido. Si el contexto incluye PAA questions (People Also Ask), absorbe esas respuestas dentro de los párrafos del H2 correspondiente. El resultado debe ser contenido más denso y completo, no una sección de Q&A.
+
+DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo aparecen en sus tipos correspondientes. NO incluyas faq_items ni faq_title.
 
 {
   "slug": "slug-en-kebab-case",
@@ -168,37 +171,29 @@ DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo apar
   "meta_description": "Máximo 160 caracteres",
   "content_sections": [
     { "type": "heading2", "content": "Qué es [concepto]: definición y mecanismo", "alt_text": "" },
-    { "type": "paragraph", "content": "Definición precisa + cómo funciona en la práctica. 150-180 palabras, sin ejemplos.", "alt_text": "" },
-    { "type": "paragraph", "content": "Segundo ángulo: por qué existe este tipo, qué problema resuelve, contexto en la cadena de suministro. 150-180 palabras.", "alt_text": "" },
-    { "type": "callout", "content": "La diferencia clave que el lector no debe perderse.", "alt_text": "" },
+    { "type": "paragraph", "content": "Definición precisa + cómo funciona + por qué existe este concepto + qué problema resuelve. Incorpora aquí las respuestas a las preguntas básicas que alguien haría al buscar este tema. 200-230 palabras.", "alt_text": "" },
+    { "type": "paragraph", "content": "Contexto más amplio: dónde aplica, quién lo necesita, qué pasa si no se implementa. Responde las dudas de segundo nivel que surgen después de entender la definición. 180-210 palabras.", "alt_text": "" },
+    { "type": "callout", "content": "La diferencia o dato clave que el lector no debe perderse.", "alt_text": "" },
     { "type": "example", "content": "Caso real: tipo empresa + país + situación + resultado.", "alt_text": "" },
     { "type": "heading2", "content": "Cómo funciona [concepto] paso a paso", "alt_text": "" },
-    { "type": "numbered_list", "content": "", "alt_text": "", "items": ["Paso 1: descripción detallada", "Paso 2", "Paso 3", "Paso 4"] },
-    { "type": "paragraph", "content": "Consideraciones prácticas de implementación. 150-180 palabras.", "alt_text": "" },
-    { "type": "example", "content": "Caso real de implementación.", "alt_text": "" },
+    { "type": "numbered_list", "content": "", "alt_text": "", "items": ["Paso 1: descripción detallada con contexto real", "Paso 2", "Paso 3", "Paso 4", "Paso 5"] },
+    { "type": "paragraph", "content": "Consideraciones prácticas, errores comunes y factores que determinan el éxito de la implementación. Absorbe aquí las preguntas del tipo '¿cómo se hace?' o '¿qué se necesita?'. 180-210 palabras.", "alt_text": "" },
+    { "type": "example", "content": "Caso real de implementación con resultado medible.", "alt_text": "" },
     { "type": "heading2", "content": "Cuándo aplicar [concepto]: sectores y casos de uso", "alt_text": "" },
-    { "type": "paragraph", "content": "En qué industrias o situaciones este tipo es el más adecuado. 150-180 palabras.", "alt_text": "" },
-    { "type": "list", "content": "", "alt_text": "", "items": ["Caso de uso 1", "Caso de uso 2", "Caso de uso 3", "Caso de uso 4"] },
+    { "type": "paragraph", "content": "En qué situaciones es obligatorio o recomendado. Responde preguntas del tipo '¿es obligatorio para empresas pequeñas?' o '¿qué pasa si no lo tengo?'. 180-210 palabras.", "alt_text": "" },
+    { "type": "list", "content": "", "alt_text": "", "items": ["Caso de uso 1: descripción concreta", "Caso de uso 2", "Caso de uso 3", "Caso de uso 4", "Caso de uso 5"] },
     { "type": "example", "content": "Caso real de un sector específico.", "alt_text": "" },
     { "type": "heading2", "content": "[Concepto] vs [tipo relacionado]: diferencias clave", "alt_text": "" },
-    { "type": "paragraph", "content": "Introduce la comparación y explica cuándo elegir uno u otro. 120-150 palabras.", "alt_text": "" },
-    { "type": "table", "content": "", "alt_text": "", "headers": ["Característica", "[Concepto actual]", "[Tipo relacionado]"], "rows": [["Dirección del flujo", "...", "..."], ["Qué rastrea", "...", "..."], ["Cuándo se usa", "...", "..."], ["Tecnología común", "...", "..."], ["Sector principal", "...", "..."]] }
+    { "type": "paragraph", "content": "Introduce la comparación. Responde la pregunta '¿en qué se diferencia de X?' que siempre aparece en Google para este tema. 150-180 palabras.", "alt_text": "" },
+    { "type": "table", "content": "", "alt_text": "", "headers": ["Característica", "[Concepto actual]", "[Tipo relacionado]"], "rows": [["Dirección del flujo", "...", "..."], ["Qué rastrea", "...", "..."], ["Cuándo se usa", "...", "..."], ["Tecnología común", "...", "..."], ["Sector principal", "...", "..."], ["Sin este sistema", "...", "..."]] }
   ],
   "image_suggestions": [
     { "after_section": "H2 más visual del contenido", "description": "Diagrama o ilustración sugerida (nota interna)" }
   ],
-  "faq_title": "Preguntas frecuentes sobre [concepto]",
-  "faq_subtitle": "Respuestas a lo que más se busca en Google sobre este tema",
-  "faq_items": [
-    { "question": "¿Pregunta real de alguien buscando en Google?", "answer": "Respuesta directa de 3-4 oraciones con ejemplo si aplica." },
-    { "question": "¿Segunda pregunta frecuente?", "answer": "Respuesta completa." },
-    { "question": "¿Tercera pregunta?", "answer": "Respuesta completa." },
-    { "question": "¿Cuarta pregunta?", "answer": "Respuesta completa." }
-  ],
   "cta_text": "CTA informativo sin nombre de empresa."
 }
 
-4 bloques H2. El último siempre es la tabla comparativa con el tipo más relacionado. faq_items exactamente 4 preguntas reales que la gente busca en Google. image_suggestions entre 1 y 2.`
+4 bloques H2. Párrafos de 180-230 palabras con respuestas integradas a las preguntas frecuentes del tema. El último H2 siempre es la tabla comparativa. image_suggestions entre 1 y 2. NO incluyas faq_title, faq_subtitle ni faq_items.`
   }
 
   // blog
