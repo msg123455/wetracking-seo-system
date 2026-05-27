@@ -75,11 +75,11 @@ export async function POST(req: NextRequest) {
           .resize(logoWidth, null, { fit: "inside" })
           .toBuffer()
         const logoMeta = await sharp(logoResized).metadata()
-        buffer = await img.composite([{
+        buffer = Buffer.from(await img.composite([{
           input: logoResized,
           top: Math.round(imgHeight * 0.04),
           left: Math.round((imgWidth - (logoMeta.width || logoWidth)) / 2),
-        }]).jpeg({ quality: 92 }).toBuffer()
+        }]).jpeg({ quality: 92 }).toBuffer()) as Buffer
       } catch { /* logo overlay failed, use original */ }
     }
 
