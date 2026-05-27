@@ -23,7 +23,7 @@ type SitemapNode = {
 }
 type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
 
-type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
+type Tab = "dashboard" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
 type GeneratedImage = { id: string; url: string; description: string; created_at: string }
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
@@ -34,7 +34,7 @@ const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: strin
 }
 
 export default function SEOCommandCenter() {
-  const [tab, setTab] = useState<Tab>("sitemapbuild")
+  const [tab, setTab] = useState<Tab>("dashboard")
 
   // data
   const [keywords,     setKeywords]     = useState<Keyword[]>([])
@@ -455,51 +455,213 @@ export default function SEOCommandCenter() {
     { key:"images",       label:"Imagenes",        count: genImages.length },
   ]
 
+  const NAV_GROUPS = [
+    { section: null, items: [
+      { key:"dashboard", label:"Dashboard" },
+    ]},
+    { section: "CONTENIDO", items: [
+      { key:"sitemapbuild", label:"Estructura SEO",  count: sitemapDefs.length },
+      { key:"research",     label:"Research",        count: research.length },
+      { key:"generate",     label:"Generar" },
+    ]},
+    { section: "PAGINAS", items: [
+      { key:"pending",   label:"Pendientes",      count: pending.length,      dot: pending.length > 0 },
+      { key:"published", label:"Publicadas",       count: publishedSM.length },
+      { key:"updates",   label:"Actualizaciones",  count: staleCount,          alertRed: staleCount > 0 },
+    ]},
+    { section: "OPTIMIZACION", items: [
+      { key:"aeo",     label:"AEO",       count: aeoItems.filter((a:any)=>a.aeo).length },
+      { key:"youtube", label:"YouTube",   count: ytScripts.length },
+      { key:"images",  label:"Imagenes",  count: genImages.length },
+    ]},
+    { section: "CONFIG", items: [
+      { key:"keywords", label:"Keywords", count: keywords.length },
+      { key:"clusters", label:"Clusters", count: clusters.length },
+    ]},
+  ]
+
   return (
-    <div style={{ fontFamily:"system-ui,sans-serif", minHeight:"100vh", background:"#f2f3f7" }}>
+    <div style={{ fontFamily:"system-ui,sans-serif", height:"100vh", display:"flex", flexDirection:"column", overflow:"hidden", background:"#f0f2f7" }}>
 
       {/* ── Header ── */}
-      <div style={{ background:"#0b194f", padding:"16px 28px", display:"flex", alignItems:"center", gap:14 }}>
-        <span style={{ color:"#00ffd7", fontWeight:800, fontSize:21 }}>WeTracking</span>
-        <span style={{ color:"rgba(255,255,255,0.3)" }}>|</span>
-        <span style={{ color:"white", fontWeight:600, fontSize:16 }}>SEO Command Center</span>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
-          {[["Sitemaps",sitemapDefs.length],["Keywords",keywords.length],["Pendientes",pending.length,true],["Research",research.length],["YouTube",ytScripts.length],["Publicadas",publishedSM.length]].map(([l,v,hi]:any) => (
-            <div key={l} style={{ textAlign:"center", background:"rgba(255,255,255,0.1)", borderRadius:7, padding:"4px 11px" }}>
-              <div style={{ color: hi && v>0 ? "#00ffd7" : "rgba(255,255,255,0.55)", fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>{l}</div>
-              <div style={{ color:"white", fontWeight:800, fontSize:17, lineHeight:1.2 }}>{v}</div>
+      <div style={{ background:"#0b194f", padding:"0 22px", height:50, display:"flex", alignItems:"center", gap:12, flexShrink:0, borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
+        <span style={{ color:"#00ffd7", fontWeight:800, fontSize:17 }}>WeTracking</span>
+        <span style={{ color:"rgba(255,255,255,0.2)", fontSize:18, fontWeight:200 }}>|</span>
+        <span style={{ color:"rgba(255,255,255,0.7)", fontWeight:500, fontSize:13 }}>SEO Command Center</span>
+        {loading && (
+          <span style={{ marginLeft:8, fontSize:11, color:"#00ffd7", background:"rgba(0,255,215,0.1)", padding:"3px 10px", borderRadius:20 }}>Procesando...</span>
+        )}
+        {message && (
+          <div style={{ marginLeft:"auto", background: message.type==="success"?"rgba(0,200,130,0.18)":message.type==="error"?"rgba(220,53,69,0.22)":"rgba(255,193,7,0.18)", padding:"5px 14px", borderRadius:20, color: message.type==="success"?"#00ffd7":message.type==="error"?"#ff9999":"#ffc107", fontSize:12, display:"flex", alignItems:"center", gap:8, maxWidth:480 }}>
+            <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{message.text}</span>
+            <button onClick={()=>setMessage(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"inherit",fontSize:14,lineHeight:1,padding:0,flexShrink:0 }}>x</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Body: sidebar + content ── */}
+      <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
+
+        {/* ── Sidebar ── */}
+        <div style={{ width:212, background:"#0d1b38", display:"flex", flexDirection:"column", overflowY:"auto", flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)" }}>
+          {NAV_GROUPS.map((group: any, gi: number) => (
+            <div key={gi} style={{ marginTop: gi===0 ? 10 : 0 }}>
+              {group.section && (
+                <div style={{ padding:"16px 18px 5px", fontSize:9, fontWeight:800, color:"rgba(255,255,255,0.28)", textTransform:"uppercase", letterSpacing:1.2 }}>
+                  {group.section}
+                </div>
+              )}
+              {group.items.map((item: any) => {
+                const active = tab === item.key
+                return (
+                  <button key={item.key} onClick={()=>setTab(item.key as Tab)} style={{
+                    display:"flex", alignItems:"center", justifyContent:"space-between", gap:8,
+                    width:"100%", padding:"9px 16px 9px 18px", border:"none", cursor:"pointer",
+                    background: active ? "rgba(0,122,237,0.22)" : "transparent",
+                    borderLeft: `3px solid ${active ? "#007aed" : "transparent"}`,
+                    color: active ? "white" : "rgba(255,255,255,0.55)",
+                    fontSize:13, fontWeight: active ? 600 : 400, textAlign:"left",
+                  }}>
+                    <span>{item.label}</span>
+                    <span style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0 }}>
+                      {item.count !== undefined && item.count > 0 && (
+                        <span style={{ fontSize:10, fontWeight:700, padding:"1px 7px", borderRadius:20,
+                          background: item.alertRed ? "#dc3545" : active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                          color:      item.alertRed ? "white"    : active ? "white"                  : "rgba(255,255,255,0.45)",
+                        }}>{item.count}</span>
+                      )}
+                      {item.dot && <span style={{ width:6, height:6, borderRadius:"50%", background:"#00ffd7", flexShrink:0 }}/>}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           ))}
         </div>
-      </div>
 
-      {/* ── Notificacion ── */}
-      {message && (
-        <div style={{ background: message.type==="success"?"#d4edda":message.type==="error"?"#f8d7da":"#fff3cd", padding:"9px 28px", borderBottom:"1px solid #ddd", color:"#333", fontSize:13, display:"flex", justifyContent:"space-between" }}>
-          <span>{message.text}</span>
-          <button onClick={()=>setMessage(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:18,lineHeight:1 }}>x</button>
-        </div>
-      )}
+        {/* ── Main content ── */}
+        <div style={{ flex:1, overflowY:"auto", padding:"28px 32px" }}>
 
-      {/* ── Tabs ── */}
-      <div style={{ background:"white", borderBottom:"2px solid #eee", overflowX:"auto", whiteSpace:"nowrap", scrollbarWidth:"none" }}>
-        <div style={{ display:"inline-flex", padding:"0 24px" }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={()=>setTab(t.key)} style={{
-              padding:"12px 18px", border:"none", background:"none", cursor:"pointer",
-              fontWeight: tab===t.key?700:400, color: tab===t.key?"#007aed":"#666",
-              borderBottom: tab===t.key?"3px solid #007aed":"3px solid transparent",
-              marginBottom:-2, fontSize:13, whiteSpace:"nowrap", position:"relative",
-            }}>
-              {t.label}{t.count!==undefined?` (${t.count})`:""}
-              {t.dot && t.count && t.count > 0 && <span style={{ position:"absolute", top:8, right:6, width:6, height:6, borderRadius:"50%", background: t.key==="updates" ? "#dc3545" : "#00ffd7" }}/>}
-            </button>
-          ))}
-        </div>
-      </div>
+        {/* ══ DASHBOARD ══ */}
+        {tab==="dashboard" && (
+          <div>
+            <div style={{ marginBottom:24 }}>
+              <h2 style={{ ...H2, marginBottom:4 }}>Dashboard</h2>
+              <p style={{ color:"#888", fontSize:13, margin:0 }}>
+                {new Date().toLocaleDateString("es-CO", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}
+              </p>
+            </div>
 
-      {/* ── Contenido ── */}
-      <div style={{ padding:28, maxWidth:980, margin:"0 auto" }}>
+            {/* ── Metricas principales ── */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:22 }}>
+              {[
+                { label:"Paginas publicadas",    value: publishedSM.length,                              color:"#007aed", bg:"#e8f4fd", onClick: ()=>setTab("published") },
+                { label:"Pendientes de revision", value: pending.length,                                   color: pending.length>0?"#fd7e14":"#aaa", bg: pending.length>0?"#fff3e8":"#f8f9fa", onClick: ()=>setTab("pending"), alert: pending.length>0 },
+                { label:"Necesitan actualizacion",value: staleCount,                                       color: staleCount>0?"#dc3545":"#aaa",     bg: staleCount>0?"#fff0f0":"#f8f9fa",     onClick: ()=>setTab("updates"),  alert: staleCount>0 },
+                { label:"Research realizados",    value: research.length,                                  color:"#6f42c1", bg:"#f3eeff", onClick: ()=>setTab("research") },
+                { label:"Scripts YouTube",        value: ytScripts.length,                                 color:"#fd7e14", bg:"#fff3e8", onClick: ()=>setTab("youtube") },
+                { label:"AEO optimizadas",        value: aeoItems.filter((a:any)=>a.aeo).length,           color:"#0d9488", bg:"#e0f7f5", onClick: ()=>setTab("aeo") },
+              ].map((m,i) => (
+                <div key={i} onClick={m.onClick} style={{ background:"white", borderRadius:12, padding:"18px 20px", cursor:"pointer", border:`1px solid ${m.alert?"rgba(220,53,69,0.3)":"#eee"}`, boxShadow: m.alert?"0 0 0 3px rgba(220,53,69,0.08)":"none" }}>
+                  <div style={{ fontSize:28, fontWeight:800, color:m.color, lineHeight:1 }}>{m.value}</div>
+                  <div style={{ fontSize:12, color:"#666", marginTop:5, fontWeight:500 }}>{m.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Salud del contenido ── */}
+            {publishedSM.length > 0 && (
+              <div style={{ background:"white", borderRadius:12, padding:"20px 22px", marginBottom:18, border:"1px solid #eee" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <span style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>Salud del contenido</span>
+                  <span style={{ fontSize:12, color:"#aaa" }}>{publishedSM.length} paginas publicadas</span>
+                </div>
+                <div style={{ display:"flex", gap:2, marginBottom:10, height:8, borderRadius:6, overflow:"hidden" }}>
+                  {publishedSM.map((p, i) => {
+                    const { days } = getAgeStatus(p.lastmod)
+                    return <div key={i} style={{ flex:1, background: days>180?"#dc3545":days>90?"#ffc107":"#28a745" }} title={p.keyword}/>
+                  })}
+                </div>
+                <div style={{ display:"flex", gap:20, fontSize:12 }}>
+                  <span style={{ color:"#28a745", fontWeight:600 }}>Al dia: {publishedSM.filter(p=>getAgeStatus(p.lastmod).days<=90).length}</span>
+                  <span style={{ color:"#ffc107", fontWeight:600 }}>Revisar: {publishedSM.filter(p=>{const d=getAgeStatus(p.lastmod).days;return d>90&&d<=180}).length}</span>
+                  <span style={{ color:"#dc3545", fontWeight:600 }}>Criticas: {publishedSM.filter(p=>getAgeStatus(p.lastmod).days>180).length}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ── Acciones rapidas ── */}
+            <div style={{ background:"white", borderRadius:12, padding:"20px 22px", marginBottom:18, border:"1px solid #eee" }}>
+              <div style={{ fontWeight:700, color:"#0b194f", fontSize:14, marginBottom:14 }}>Acciones rapidas</div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                <button onClick={()=>setTab("sitemapbuild")} style={BTN_BLUE}>Nueva estructura SEO</button>
+                <button onClick={()=>setTab("research")} style={BTN_GHOST}>Nuevo research</button>
+                <button onClick={()=>setTab("generate")} style={BTN_GHOST}>Generar pagina</button>
+                {pending.length>0 && (
+                  <button onClick={()=>setTab("pending")} style={{ padding:"9px 18px", background:"#fff3e8", color:"#fd7e14", border:"1px solid #ffddb3", borderRadius:7, cursor:"pointer", fontWeight:700, fontSize:13 }}>
+                    Revisar pendientes ({pending.length})
+                  </button>
+                )}
+                {staleCount>0 && (
+                  <button onClick={()=>setTab("updates")} style={{ padding:"9px 18px", background:"#fff0f0", color:"#dc3545", border:"1px solid #f5c2c7", borderRadius:7, cursor:"pointer", fontWeight:700, fontSize:13 }}>
+                    Actualizar contenido ({staleCount})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+              {/* ── Ultimo research ── */}
+              {research.length>0 && (
+                <div style={{ background:"white", borderRadius:12, padding:"20px 22px", border:"1px solid #eee" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                    <span style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>Ultimo research</span>
+                    <button onClick={()=>setTab("research")} style={{ fontSize:12, color:"#007aed", background:"none", border:"none", cursor:"pointer", fontWeight:600 }}>Ver todos</button>
+                  </div>
+                  {research.slice(0,4).map((r,i)=>(
+                    <div key={i} style={{ padding:"9px 0", borderBottom: i<3?"1px solid #f5f5f5":"none", display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontWeight:600, fontSize:13, color:"#0b194f", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.topic}</div>
+                        <div style={{ fontSize:11, color:"#aaa", marginTop:1 }}>{r.data.sources_scraped||r.sources_scraped||0} fuentes analizadas</div>
+                      </div>
+                      <span style={{ fontSize:10, background:"#f3eeff", color:"#6f42c1", padding:"2px 8px", borderRadius:20, fontWeight:700, flexShrink:0 }}>{r.depth}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Sitemaps activos ── */}
+              {sitemapDefs.length>0 && (
+                <div style={{ background:"white", borderRadius:12, padding:"20px 22px", border:"1px solid #eee" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                    <span style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>Sitemaps activos</span>
+                    <button onClick={()=>setTab("sitemapbuild")} style={{ fontSize:12, color:"#007aed", background:"none", border:"none", cursor:"pointer", fontWeight:600 }}>Ver todos</button>
+                  </div>
+                  {sitemapDefs.map((sm,i)=>{
+                    const smNodes = sitemapNodes.filter(n=>n.sitemap_id===sm.id)
+                    const pub = smNodes.filter(n=>n.status==="published").length
+                    const gen = smNodes.filter(n=>n.status==="generated").length
+                    const dft = smNodes.filter(n=>n.status==="draft").length
+                    return (
+                      <div key={i} style={{ padding:"10px 0", borderBottom: i<sitemapDefs.length-1?"1px solid #f5f5f5":"none" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <span style={{ fontWeight:600, fontSize:13, color:"#0b194f" }}>{sm.name}</span>
+                          <button onClick={()=>{setActiveSitemapId(sm.id);setTab("sitemapbuild")}} style={{ fontSize:11, color:"#007aed", background:"none", border:"none", cursor:"pointer", fontWeight:600 }}>Abrir</button>
+                        </div>
+                        <div style={{ display:"flex", gap:10, marginTop:5 }}>
+                          <span style={{ fontSize:11, color:"#28a745" }}>{pub} publicadas</span>
+                          {gen>0&&<span style={{ fontSize:11, color:"#fd7e14" }}>{gen} generadas</span>}
+                          {dft>0&&<span style={{ fontSize:11, color:"#aaa" }}>{dft} borrador</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
 
         {/* ══ SITEMAP BUILDER ══ */}
         {tab==="sitemapbuild" && (
@@ -1432,8 +1594,9 @@ export default function SEOCommandCenter() {
           )
         })()}
 
-      </div>
-    </div>
+        </div> {/* end main content */}
+      </div> {/* end body */}
+    </div> {/* end outer */}
   )
 }
 
