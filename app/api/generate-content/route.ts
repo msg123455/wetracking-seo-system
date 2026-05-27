@@ -508,14 +508,24 @@ export async function POST(req: NextRequest) {
       `${allContext}\nDEVUELVE SOLO JSON`
     ) : basePrompt
 
+    // Pillar and secondary pages need more tokens (2500+ words + schema + context)
+    const maxTokens = page_type === "pillar" ? 16000 : page_type === "secondary" ? 12000 : 8000
+
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8000,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: finalPrompt }],
     })
 
     const raw = message.content[0].type === "text" ? message.content[0].text : ""
     const clean = raw.replace(/```json\n?|```/g, "").trim()
+
+    // Detect truncated response before attempting parse
+    if (message.stop_reason === "max_tokens") {
+      console.error(`generate-content: respuesta truncada — aumentar max_tokens (page_type: ${page_type}, tokens usados: ${maxTokens})`)
+      return Response.json({ error: `Contenido truncado por limite de tokens. Intenta con una keyword mas especifica o un tipo de pagina menor (third en vez de pillar).` }, { status: 500 })
+    }
+
     const content = removeEmDash(JSON.parse(clean))
 
     // E-E-A-T: add structured data and author metadata server-side
