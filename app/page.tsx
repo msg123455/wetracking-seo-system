@@ -1594,9 +1594,9 @@ export default function SEOCommandCenter() {
           )
         })()}
 
-        </div> {/* end main content */}
-      </div> {/* end body */}
-    </div> {/* end outer */}
+        </div>
+      </div>
+    </div>
   )
 }
 
