@@ -62,11 +62,12 @@ async function generateAndUploadImage(description: string): Promise<string | nul
           .resize(logoWidth, null, { fit: "inside" })
           .toBuffer()
         const logoMeta = await sharp(logoResized).metadata()
-        buffer = Buffer.from(await img.composite([{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        buffer = (await img.composite([{
           input: logoResized,
           top: Math.round((meta.height || 720) * 0.04),
           left: Math.round((imgWidth - (logoMeta.width || logoWidth)) / 2),
-        }]).jpeg({ quality: 92 }).toBuffer()) as Buffer
+        }]).jpeg({ quality: 92 }).toBuffer()) as unknown as Buffer
       } catch { /* logo overlay failed, use original */ }
     }
 
