@@ -14,7 +14,7 @@ type Page = {
   cluster_id: string; pillar_id: string; aeo?: any
   content: Record<string, any>; status: string; created_at: string
 }
-type SitemapEntry = { url: string; keyword: string; lastmod: string; priority: string; entity?: string }
+type SitemapEntry = { id?: string; url: string; keyword: string; lastmod: string; priority: string; entity?: string; page_type?: string; cluster_id?: string }
 
 type SitemapNode = {
   id: string; sitemap_id: string; url: string; keyword: string
@@ -23,7 +23,7 @@ type SitemapNode = {
 }
 type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
 
-type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images"
+type Tab = "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
 type GeneratedImage = { id: string; url: string; description: string; created_at: string }
 
 const PAGE_TYPE_COLORS: Record<string, { label: string; color: string; bg: string }> = {
@@ -103,6 +103,10 @@ export default function SEOCommandCenter() {
   const [addNodeUrl,   setAddNodeUrl]   = useState("")
   const [addNodeKw,    setAddNodeKw]    = useState("")
   const [addNodeType,  setAddNodeType]  = useState<"pillar"|"secondary"|"third"|"blog">("secondary")
+
+  // content updates panel
+  const [updatingPages, setUpdatingPages] = useState<Record<string, boolean>>({})
+  const [updateFilter,  setUpdateFilter]  = useState<"all"|"critical"|"review"|"ok">("all")
 
   // global loading + messages
   const [loading,      setLoading]      = useState(false)
@@ -370,6 +374,49 @@ export default function SEOCommandCenter() {
     } catch { /* silent */ }
   }
 
+  // ── Refresh a published page (content update alert) ──
+  async function refreshPublishedPage(entry: SitemapEntry) {
+    if (!entry.id) return
+    const nodeForPage = sitemapNodes.find(n => n.page_id === entry.id)
+
+    setUpdatingPages(prev => ({ ...prev, [entry.id!]: true }))
+    setLoading(true)
+    notify(`Actualizando "${entry.keyword}" — investigando con Perplexity...`, "info")
+    try {
+      const rr = await fetch("/api/research", {
+        method: "POST", headers: jsonHdr,
+        body: JSON.stringify({ topic: entry.keyword, depth: "deep" }),
+      })
+      const rd = await rr.json(); if (!rr.ok) throw new Error(rd.error)
+      notify(`Research listo (${rd.sources_scraped || 0} fuentes). Generando nueva version...`, "info")
+
+      const gr = await fetch("/api/generate-content", {
+        method: "POST", headers: jsonHdr,
+        body: JSON.stringify({
+          keyword: entry.keyword,
+          page_type: entry.page_type || "pillar",
+          industry: "RFID general",
+          cluster_id: entry.cluster_id || "default",
+          pillar_id: "default",
+          research_id: rd.id,
+        }),
+      })
+      const gd = await gr.json(); if (!gr.ok) throw new Error(gd.error)
+
+      if (nodeForPage) {
+        await fetch("/api/sitemap-builder", {
+          method: "PATCH", headers: jsonHdr,
+          body: JSON.stringify({ node_id: nodeForPage.id, status: "generated", page_id: gd.id }),
+        })
+      }
+      notify(`Nueva version lista para "${entry.keyword}" — revisa en Pendientes`, "success")
+      setTab("pending")
+      loadData()
+    } catch (e: any) { notify("Error al actualizar: " + e.message, "error") }
+    setUpdatingPages(prev => ({ ...prev, [entry.id!]: false }))
+    setLoading(false)
+  }
+
   // ── Sitemap tree rendering ──
   const activeSitemap = sitemapDefs.find(s => s.id === activeSitemapId) || null
   const activeNodes = sitemapNodes
@@ -389,17 +436,23 @@ export default function SEOCommandCenter() {
   // ─────────────────────────────────────────────────
   // TAB BAR
   // ─────────────────────────────────────────────────
+  const staleCount = publishedSM.filter(p => {
+    const days = Math.floor((Date.now() - new Date(p.lastmod).getTime()) / 86_400_000)
+    return days > 90
+  }).length
+
   const TABS: { key: Tab; label: string; count?: number; dot?: boolean }[] = [
-    { key:"sitemapbuild", label:"Estructura",   count: sitemapDefs.length },
-    { key:"keywords",     label:"Keywords",     count: keywords.length },
-    { key:"research",     label:"Research",     count: research.length },
+    { key:"sitemapbuild", label:"Estructura",      count: sitemapDefs.length },
+    { key:"keywords",     label:"Keywords",        count: keywords.length },
+    { key:"research",     label:"Research",        count: research.length },
     { key:"generate",     label:"Generar" },
-    { key:"pending",      label:"Pendientes",   count: pending.length, dot: pending.length > 0 },
-    { key:"youtube",      label:"YouTube",      count: ytScripts.length },
-    { key:"aeo",          label:"AEO",          count: aeoItems.filter(a=>a.aeo).length },
-    { key:"clusters",     label:"Clusters",     count: clusters.length },
-    { key:"published",    label:"Publicadas",   count: publishedSM.length },
-    { key:"images",       label:"Imagenes",     count: genImages.length },
+    { key:"pending",      label:"Pendientes",      count: pending.length,   dot: pending.length > 0 },
+    { key:"youtube",      label:"YouTube",         count: ytScripts.length },
+    { key:"aeo",          label:"AEO",             count: aeoItems.filter(a=>a.aeo).length },
+    { key:"clusters",     label:"Clusters",        count: clusters.length },
+    { key:"published",    label:"Publicadas",      count: publishedSM.length },
+    { key:"updates",      label:"Actualizaciones", count: staleCount, dot: staleCount > 0 },
+    { key:"images",       label:"Imagenes",        count: genImages.length },
   ]
 
   return (
@@ -439,7 +492,7 @@ export default function SEOCommandCenter() {
               marginBottom:-2, fontSize:13, whiteSpace:"nowrap", position:"relative",
             }}>
               {t.label}{t.count!==undefined?` (${t.count})`:""}
-              {t.dot && t.count && t.count > 0 && <span style={{ position:"absolute", top:8, right:6, width:6, height:6, borderRadius:"50%", background:"#00ffd7" }}/>}
+              {t.dot && t.count && t.count > 0 && <span style={{ position:"absolute", top:8, right:6, width:6, height:6, borderRadius:"50%", background: t.key==="updates" ? "#dc3545" : "#00ffd7" }}/>}
             </button>
           ))}
         </div>
@@ -1268,6 +1321,117 @@ export default function SEOCommandCenter() {
           </div>
         )}
 
+        {/* ══ ACTUALIZACIONES ══ */}
+        {tab==="updates" && (() => {
+          const critical = publishedSM.filter(p => Math.floor((Date.now() - new Date(p.lastmod).getTime()) / 86_400_000) > 180)
+          const review   = publishedSM.filter(p => { const d = Math.floor((Date.now() - new Date(p.lastmod).getTime()) / 86_400_000); return d > 90 && d <= 180 })
+          const ok       = publishedSM.filter(p => Math.floor((Date.now() - new Date(p.lastmod).getTime()) / 86_400_000) <= 90)
+
+          const filtered = publishedSM
+            .filter(p => {
+              const days = Math.floor((Date.now() - new Date(p.lastmod).getTime()) / 86_400_000)
+              if (updateFilter === "critical") return days > 180
+              if (updateFilter === "review")   return days > 90 && days <= 180
+              if (updateFilter === "ok")       return days <= 90
+              return true
+            })
+            .sort((a, b) => new Date(a.lastmod).getTime() - new Date(b.lastmod).getTime())
+
+          return (
+            <div>
+              <h2 style={H2}>Actualizaciones de Contenido</h2>
+              <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:22 }}>
+                Google premia el contenido fresco. Paginas con mas de 3 meses necesitan revision;
+                con mas de 6 meses, nueva investigacion y regeneracion completa.
+                "Actualizar" corre un deep research nuevo y genera una version actualizada que va a Pendientes para tu revision.
+              </p>
+
+              {/* ── Resumen ── */}
+              <div style={{ display:"flex", gap:12, marginBottom:24 }}>
+                {[
+                  { label:"Desactualizadas", sublabel:"> 6 meses", count:critical.length, color:"#dc3545", bg:"#fff0f0", border:"#f5c2c7" },
+                  { label:"Revisar pronto",  sublabel:"3 a 6 meses", count:review.length,   color:"#856404", bg:"#fff3cd", border:"#ffeaa7" },
+                  { label:"Al dia",          sublabel:"< 3 meses",  count:ok.length,       color:"#146c43", bg:"#d1f7e4", border:"#a3e0c5" },
+                ].map(stat => (
+                  <div key={stat.label} onClick={() => setUpdateFilter(stat.count > 0 ? (stat.label==="Al dia"?"ok":stat.label==="Revisar pronto"?"review":"critical") : "all")}
+                    style={{ flex:1, background:stat.bg, borderRadius:12, padding:"16px 20px", border:`1px solid ${stat.border}`, cursor:"pointer" }}>
+                    <div style={{ fontSize:30, fontWeight:800, color:stat.color, lineHeight:1 }}>{stat.count}</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:stat.color, marginTop:4 }}>{stat.label}</div>
+                    <div style={{ fontSize:11, color:stat.color, opacity:0.7 }}>{stat.sublabel}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Filtros ── */}
+              <div style={{ display:"flex", gap:8, marginBottom:18 }}>
+                {([["all","Todas"],["critical","Criticas (>6m)"],["review","Revisar (3-6m)"],["ok","Al dia (<3m)"]] as const).map(([k,l]) => (
+                  <button key={k} onClick={() => setUpdateFilter(k)} style={{
+                    padding:"6px 16px", borderRadius:20, border:"none", cursor:"pointer", fontSize:12, fontWeight:600,
+                    background: updateFilter===k ? "#0b194f" : "#f0f0f0",
+                    color:      updateFilter===k ? "white"   : "#666",
+                  }}>{l}</button>
+                ))}
+              </div>
+
+              {/* ── Lista ── */}
+              {publishedSM.length === 0
+                ? <Empty text="Sin paginas publicadas aun. Publica tu primera pagina para empezar a ver alertas." />
+                : filtered.length === 0
+                  ? <Empty text="Sin paginas en esta categoria." />
+                  : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      {filtered.map((p, i) => {
+                        const age      = getAgeStatus(p.lastmod)
+                        const isUpd    = !!(p.id && updatingPages[p.id])
+                        const ptColor  = PAGE_TYPE_COLORS[p.page_type||""] || { label: p.page_type||"", color:"#666", bg:"#f0f0f0" }
+                        const needsAct = age.days > 90
+                        return (
+                          <div key={i} style={{ background:"white", borderRadius:10, border:`1.5px solid ${age.border}`, padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:14 }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5, flexWrap:"wrap" }}>
+                                <span style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>{p.keyword}</span>
+                                {p.page_type && (
+                                  <span style={{ padding:"2px 9px", borderRadius:20, fontSize:10, fontWeight:700, background:ptColor.bg, color:ptColor.color }}>{ptColor.label}</span>
+                                )}
+                                <span style={{ padding:"3px 10px", borderRadius:20, fontSize:10, fontWeight:700, background:age.bg, color:age.color, border:`1px solid ${age.border}` }}>
+                                  {age.label}
+                                </span>
+                              </div>
+                              <div style={{ display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
+                                <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ color:"#007aed", fontSize:12 }}>{p.url}</a>
+                                <span style={{ fontSize:11, color:"#aaa" }}>
+                                  Publicada: {new Date(p.lastmod).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"numeric" })}
+                                </span>
+                                <span style={{ fontSize:11, fontWeight:700, color:age.color }}>{ageDays(age.days)} atras</span>
+                              </div>
+                            </div>
+                            <div style={{ flexShrink:0 }}>
+                              {needsAct ? (
+                                <button
+                                  onClick={() => refreshPublishedPage(p)}
+                                  disabled={isUpd || loading}
+                                  style={{
+                                    padding:"9px 18px", borderRadius:8, border:"none", cursor: isUpd||loading ? "default":"pointer",
+                                    fontWeight:700, fontSize:12,
+                                    background: isUpd ? "#f0f0f0" : age.days > 180 ? "#dc3545" : "#856404",
+                                    color:      isUpd ? "#999"    : "white",
+                                  }}>
+                                  {isUpd ? "Actualizando..." : "Actualizar"}
+                                </button>
+                              ) : (
+                                <span style={{ fontSize:11, color:"#aaa", fontStyle:"italic" }}>Sin accion requerida</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+              }
+            </div>
+          )
+        })()}
+
       </div>
     </div>
   )
@@ -1511,6 +1675,21 @@ function Tip({ type, children }: { type:"warn"|"info"; children: React.ReactNode
 
 function Empty({ text }: { text: string }) {
   return <div style={{ textAlign:"center", padding:"40px 24px", color:"#bbb", background:"white", borderRadius:12, border:"1px dashed #ddd", fontSize:13 }}>{text}</div>
+}
+
+// ── Content age helpers ──
+function getAgeStatus(lastmod: string): { days: number; label: string; color: string; bg: string; border: string } {
+  const days = Math.floor((Date.now() - new Date(lastmod).getTime()) / 86_400_000)
+  if (days > 180) return { days, label: "Desactualizado", color: "#dc3545", bg: "#fff0f0", border: "#f5c2c7" }
+  if (days > 90)  return { days, label: "Revisar pronto", color: "#856404", bg: "#fff3cd", border: "#ffeaa7" }
+  return { days, label: "Al dia", color: "#146c43", bg: "#d1f7e4", border: "#a3e0c5" }
+}
+
+function ageDays(days: number): string {
+  if (days < 30)  return `${days} dias`
+  if (days < 365) return `${Math.floor(days / 30)} meses`
+  const y = Math.floor(days / 365), m = Math.floor((days % 365) / 30)
+  return m > 0 ? `${y} ano${y > 1 ? "s" : ""} ${m}m` : `${y} ano${y > 1 ? "s" : ""}`
 }
 
 // ── Styles ──
