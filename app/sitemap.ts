@@ -17,14 +17,30 @@ const STATIC_PAGES: MetadataRoute.Sitemap = [
 export default function sitemap(): MetadataRoute.Sitemap {
   const memory = readMemory()
 
+  // Build map: page_id → full URL path from sitemap nodes
+  // ThirdPages have a slug like "hacia-adelante" but the full URL is "/trazabilidad/tipos/hacia-adelante"
+  // The sitemap node URL is always the source of truth
+  const sitemapNodes: any[] = memory.sitemap_nodes || []
+  const nodeUrlMap = new Map<string, string>(
+    sitemapNodes
+      .filter((n: any) => n.page_id)
+      .map((n: any) => [String(n.page_id), String(n.url)])
+  )
+
   const dynamic: MetadataRoute.Sitemap = (memory.published || [])
-    .filter((p: any) => p.content?.slug)
-    .map((p: any) => ({
-      url: `${BASE}/${p.content.slug}`,
-      lastModified: new Date(p.published_at || Date.now()),
-      changeFrequency: (p.page_type === "pillar" ? "weekly" : "monthly") as MetadataRoute.Sitemap[number]["changeFrequency"],
-      priority: p.page_type === "pillar" ? 0.9 : p.page_type === "secondary" ? 0.7 : 0.6,
-    }))
+    .filter((p: any) => p.content?.slug || nodeUrlMap.has(String(p.id)))
+    .map((p: any) => {
+      const nodeUrl = nodeUrlMap.get(String(p.id))
+      const path = nodeUrl
+        ? (nodeUrl.startsWith("/") ? nodeUrl : `/${nodeUrl}`)
+        : `/${p.content.slug}`
+      return {
+        url: `${BASE}${path}`,
+        lastModified: new Date(p.published_at || Date.now()),
+        changeFrequency: (p.page_type === "pillar" ? "weekly" : "monthly") as MetadataRoute.Sitemap[number]["changeFrequency"],
+        priority: p.page_type === "pillar" ? 0.9 : p.page_type === "secondary" ? 0.7 : 0.6,
+      }
+    })
 
   return [...STATIC_PAGES, ...dynamic]
 }

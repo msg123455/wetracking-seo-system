@@ -21,7 +21,8 @@ REGLAS DE CONTENIDO (OBLIGATORIAS):
 6. SOLO incluye estadísticas si vienen del contexto de investigación. Si no hay datos reales, no inventes números.
 7. El cta_text: maximo 6 palabras. Solo la accion. Ej: "Habla con un especialista hoy." o "Implementalo en tu empresa."
 8. Todo en español latinoamericano, tono profesional pero accesible.
-9. PROHIBIDO usar el guion largo (—). Nunca uses el caracter — en ningun campo. Ni en titulos, ni en parrafos, ni en ejemplos. Si necesitas separar ideas usa coma o dos puntos.`
+9. PROHIBIDO usar el guion largo (—). Nunca uses el caracter — en ningun campo. Ni en titulos, ni en parrafos, ni en ejemplos. Si necesitas separar ideas usa coma o dos puntos.
+10. Cuando uses estadísticas o cifras del CONTEXTO DE INVESTIGACION, atribúyelas con la fuente entre paréntesis al final de la oración. Ejemplo: "...en 2023 (Fuente: OPS)." Si no tienes fuente verificable, no inventes el número.`
 
   const PATRON_SECCION = `
 Patrón por cada subtema — elige el mix visual que encaje con el contenido:
@@ -46,8 +47,8 @@ DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers" y "rows" solo apa
 Estructura esperada:
 {
   "slug": "slug-en-kebab-case",
-  "title": "H1 máximo 60 caracteres — informativo, no vendedor",
-  "meta_description": "Máximo 160 caracteres — describe el contenido",
+  "title": "H1 entre 50-60 caracteres — informativo, no vendedor",
+  "meta_description": "140-155 caracteres — incluye la keyword en los primeros 60 chars, describe el valor, invita al clic",
   "content_sections": [
     { "type": "heading2", "content": "Primer subtema", "alt_text": "" },
     { "type": "paragraph", "content": "150-180 palabras, solo conceptos.", "alt_text": "" },
@@ -108,8 +109,8 @@ DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo apar
 
 {
   "slug": "slug-en-kebab-case",
-  "title": "H1 máximo 60 caracteres, informativo",
-  "meta_description": "Máximo 160 caracteres",
+  "title": "H1 entre 50-60 caracteres, informativo",
+  "meta_description": "140-155 caracteres — keyword en los primeros 60 chars, invita al clic",
   "content_sections": [
     { "type": "heading2", "content": "Qué es [tema]: definición y contexto", "alt_text": "" },
     { "type": "paragraph", "content": "150-180 palabras. Definición clara y por qué importa.", "alt_text": "" },
@@ -167,8 +168,8 @@ DEVUELVE SOLO JSON sin markdown. Los campos "items", "headers", "rows" solo apar
 
 {
   "slug": "slug-en-kebab-case",
-  "title": "H1 máximo 60 caracteres, muy específico",
-  "meta_description": "Máximo 160 caracteres",
+  "title": "H1 entre 50-60 caracteres, muy específico",
+  "meta_description": "140-155 caracteres — keyword en los primeros 60 chars, invita al clic",
   "content_sections": [
     { "type": "heading2", "content": "Qué es [concepto]: definición y mecanismo", "alt_text": "" },
     { "type": "paragraph", "content": "Definición precisa + cómo funciona + por qué existe este concepto + qué problema resuelve. Incorpora aquí las respuestas a las preguntas básicas que alguien haría al buscar este tema. 200-230 palabras.", "alt_text": "" },
@@ -207,8 +208,8 @@ ${REGLAS_CONTENIDO}
 DEVUELVE SOLO JSON sin markdown con esta estructura exacta:
 {
   "slug": "slug-en-kebab-case",
-  "title": "Título máximo 60 caracteres — despierta curiosidad, no vende",
-  "meta_description": "Máximo 160 caracteres",
+  "title": "Título entre 50-60 caracteres — despierta curiosidad, no vende",
+  "meta_description": "140-155 caracteres — keyword en los primeros 60 chars, invita al clic",
   "paragraph_1": "Párrafo introductorio 170-190 palabras. Plantea el problema o situación que enfrenta el lector. Solo contexto, sin ejemplos todavía.",
   "example_1": "Caso de apertura: [tipo de empresa] en [ciudad/país] + situación concreta + cómo lo resolvieron. Máximo 5 oraciones.",
   "key_points": ["Punto clave 1 que cubre el artículo", "Punto clave 2", "Punto clave 3", "Punto clave 4"],
@@ -374,6 +375,55 @@ Reglas:
   }
 }
 
+// Build schema.org JSON-LD for a page — Article base + FAQPage overlay for pillar/secondary
+function buildSchemaJsonLd(content: any, page_type: string): object | object[] {
+  const SITE = "https://wetracking.co"
+  const today = new Date().toISOString().split("T")[0]
+
+  const article: Record<string, any> = {
+    "@context": "https://schema.org",
+    "@type": page_type === "blog" ? "BlogPosting" : "Article",
+    "headline": content.title || "",
+    "description": content.meta_description || "",
+    "author": {
+      "@type": "Organization",
+      "name": "WeTracking",
+      "url": SITE,
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "WeTracking",
+      "url": SITE,
+      "logo": {
+        "@type": "ImageObject",
+        "url": `${SITE}/logo-white.png`,
+      },
+    },
+    "inLanguage": "es-CO",
+    "datePublished": today,
+    "dateModified": today,
+  }
+
+  // Add FAQPage schema for pillar and secondary pages that have faq_items
+  if ((page_type === "pillar" || page_type === "secondary") && content.faq_items?.length) {
+    const faqSchema = {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": content.faq_items.map((f: any) => ({
+        "@type": "Question",
+        "name": f.question,
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": f.answer,
+        },
+      })),
+    }
+    return [article, faqSchema]
+  }
+
+  return article
+}
+
 function removeEmDash(val: any): any {
   if (typeof val === "string") return val.replace(/ — /g, ", ").replace(/—/g, "")
   if (Array.isArray(val)) return val.map(removeEmDash)
@@ -406,12 +456,17 @@ export async function POST(req: NextRequest) {
           `Estadisticas: ${r.data.statistics?.map((s: any) => s.data).join(" | ")}\n` +
           `Oportunidades SEO: ${r.data.seo_opportunities?.join(" | ")}\n`
 
-        // PAA questions from Google — use as base + complement with own questions
+        // PAA questions from Google — instruction depends on page type
         if (r.data.paa_questions?.length) {
           researchContext +=
             `\nPREGUNTAS REALES DE GOOGLE (People Also Ask):\n` +
-            r.data.paa_questions.map((q: string, i: number) => `${i + 1}. ${q}`).join("\n") +
-            `\nUSA estas preguntas como base para los faq_items — pueden adaptarse, reformularse o complementarse con preguntas propias que adds valor. El objetivo es cubrir lo que la gente realmente busca en Google sobre este tema, más cualquier pregunta adicional que sea genuinamente útil.\n`
+            r.data.paa_questions.map((q: string, i: number) => `${i + 1}. ${q}`).join("\n") + "\n"
+
+          if (page_type === "third") {
+            researchContext += `INSTRUCCION: Absorbe las respuestas a estas preguntas dentro de los párrafos del H2 correspondiente. NO generes un bloque FAQ separado — enriquece el texto corrido con estas respuestas.\n`
+          } else {
+            researchContext += `USA estas preguntas como base para los faq_items — pueden adaptarse, reformularse o complementarse con preguntas propias. El objetivo es cubrir lo que la gente realmente busca en Google sobre este tema, más cualquier pregunta adicional genuinamente útil.\n`
+          }
         }
 
         // Related searches — use to inspire sections or keywords
@@ -419,6 +474,14 @@ export async function POST(req: NextRequest) {
           researchContext +=
             `\nBUSQUEDAS RELACIONADAS EN GOOGLE (úsalas para inspirar subtemas, secciones o ángulos del contenido):\n` +
             r.data.related_searches.join(" | ") + "\n"
+        }
+
+        // Regulatory and local context — key for E-E-A-T (Expertise + Trustworthiness)
+        if (r.data.regulatory_context) {
+          researchContext += `\nCONTEXTO REGULATORIO (usa esto para demostrar conocimiento normativo):\n${r.data.regulatory_context}\n`
+        }
+        if (r.data.local_context) {
+          researchContext += `\nCONTEXTO LOCAL COLOMBIA/LATAM (úsalo para aterrizar el contenido a la realidad regional):\n${r.data.local_context}\n`
         }
 
         if (r.competitor_analysis) {
@@ -454,6 +517,11 @@ export async function POST(req: NextRequest) {
     const clean = raw.replace(/```json\n?|```/g, "").trim()
     const content = removeEmDash(JSON.parse(clean))
 
+    // E-E-A-T: add structured data and author metadata server-side
+    content.schema_jsonld = buildSchemaJsonLd(content, page_type)
+    content.author = "Equipo WeTracking"
+    content.author_title = "Especialistas en Trazabilidad y Cadena de Suministro"
+
     // Internal links — detect sitemap matches in the generated content (runs in parallel with nothing, fast Haiku call)
     const sitemapNodes: any[] = memory.sitemap_nodes || []
     const suggestedLinks = await detectInternalLinks(
@@ -471,6 +539,23 @@ export async function POST(req: NextRequest) {
         url,
         domain: (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })(),
       }))
+    }
+
+    // E-E-A-T Trustworthiness: append a sources callout for pillar/secondary when research sources exist
+    if (
+      externalSources.length > 0 &&
+      (page_type === "pillar" || page_type === "secondary") &&
+      Array.isArray(content.content_sections)
+    ) {
+      const sourceLinks = externalSources
+        .slice(0, 4)
+        .map((s: { url: string; domain: string }) => `[${s.domain}](${s.url})`)
+        .join(" | ")
+      content.content_sections.push({
+        type: "paragraph",
+        content: `**Fuentes consultadas:** ${sourceLinks}`,
+        alt_text: "",
+      })
     }
 
     const page = {
