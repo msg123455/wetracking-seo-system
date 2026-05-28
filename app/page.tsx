@@ -1091,6 +1091,11 @@ export default function SEOCommandCenter() {
             <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
               Usa Perplexity para investigar en tiempo real. El contexto se integra automaticamente en la generacion de contenido.
             </p>
+
+            {/* ── TEST GEMINI ── */}
+            <GeminiTestPanel />
+
+
             <div style={{ background:"white", padding:22, borderRadius:12, border:"1px solid #eee", marginBottom:24 }}>
               <Field label="Tema a investigar">
                 <input value={resTopic} onChange={e=>setResTopic(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runResearch()}
@@ -2023,6 +2028,152 @@ function Tip({ type, children }: { type:"warn"|"info"; children: React.ReactNode
 
 function Empty({ text }: { text: string }) {
   return <div style={{ textAlign:"center", padding:"40px 24px", color:"#bbb", background:"white", borderRadius:12, border:"1px dashed #ddd", fontSize:13 }}>{text}</div>
+}
+
+// ── Gemini Research Test Panel ──
+function GeminiTestPanel() {
+  const [topic,   setTopic]   = useState("")
+  const [model,   setModel]   = useState("gemini-2.5-pro")
+  const [loading, setLoading] = useState(false)
+  const [result,  setResult]  = useState<any>(null)
+  const [error,   setError]   = useState<string|null>(null)
+
+  const MODELS = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-3.1-pro",
+    "gemini-3.1-flash",
+  ]
+
+  async function run() {
+    if (!topic.trim()) return
+    setLoading(true); setResult(null); setError(null)
+    try {
+      const r = await fetch("/api/test-gemini-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, model }),
+      })
+      const d = await r.json()
+      if (!r.ok || d.error) throw new Error(d.error || "Error desconocido")
+      setResult(d)
+    } catch (e: any) { setError(e.message) }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ background:"#fffbeb", border:"2px dashed #fbbf24", borderRadius:12, padding:20, marginBottom:24 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+        <span style={{ background:"#fbbf24", color:"#78350f", fontSize:10, fontWeight:800, padding:"3px 9px", borderRadius:20, textTransform:"uppercase", letterSpacing:0.8 }}>Beta</span>
+        <span style={{ fontWeight:700, color:"#78350f", fontSize:14 }}>Prueba: Gemini + Google Search Grounding</span>
+        <span style={{ fontSize:12, color:"#92400e" }}>— comparar con Perplexity</span>
+      </div>
+
+      <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+        <input
+          value={topic} onChange={e => setTopic(e.target.value)} onKeyDown={e => e.key==="Enter" && run()}
+          placeholder="Keyword a investigar, ej: sistema de inventarios Colombia"
+          style={{ ...INP, flex:1 }}
+        />
+        <select value={model} onChange={e => setModel(e.target.value)} style={{ ...SEL, width:180 }}>
+          {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <button onClick={run} disabled={loading || !topic.trim()} style={{
+          ...BTN_BLUE, background:"#d97706", opacity: loading || !topic.trim() ? 0.55 : 1,
+          cursor: loading || !topic.trim() ? "not-allowed" : "pointer",
+        }}>
+          {loading ? "Probando..." : "Probar Gemini"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ background:"#fff0f0", border:"1px solid #f5c2c7", borderRadius:8, padding:"12px 16px", color:"#dc3545", fontSize:13 }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {result && (
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:4 }}>
+          {/* Stats bar */}
+          <div style={{ display:"flex", gap:16, flexWrap:"wrap", padding:"10px 14px", background:"white", borderRadius:8, border:"1px solid #fde68a" }}>
+            <span style={{ fontSize:12 }}><strong style={{ color:"#0b194f" }}>Modelo:</strong> {result.model_used}</span>
+            <span style={{ fontSize:12 }}><strong style={{ color:"#0b194f" }}>Tiempo:</strong> {(result.elapsed_ms/1000).toFixed(1)}s</span>
+            <span style={{ fontSize:12, color: result.citations_count > 0 ? "#146c43" : "#dc3545" }}>
+              <strong>Fuentes:</strong> {result.citations_count} citadas
+            </span>
+            <span style={{ fontSize:12 }}><strong style={{ color:"#0b194f" }}>Busquedas:</strong> {result.web_search_queries?.join(", ") || "—"}</span>
+            {!result.ok && <span style={{ fontSize:12, color:"#dc3545" }}>JSON parse fallido</span>}
+          </div>
+
+          {/* Citations */}
+          {result.citations?.length > 0 && (
+            <div style={{ background:"white", borderRadius:8, border:"1px solid #fde68a", padding:"12px 16px" }}>
+              <div style={{ fontWeight:700, fontSize:12, color:"#78350f", marginBottom:8 }}>Fuentes encontradas ({result.citations.length})</div>
+              {result.citations.map((c: any, i: number) => (
+                <div key={i} style={{ fontSize:11, color:"#666", marginBottom:4, display:"flex", gap:8, alignItems:"baseline" }}>
+                  <span style={{ flexShrink:0, color:"#aaa" }}>{i+1}.</span>
+                  <span style={{ wordBreak:"break-all" }}>{c.title || c.url}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Research data preview */}
+          {result.data && (
+            <div style={{ background:"white", borderRadius:8, border:"1px solid #fde68a", padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+              <div style={{ fontWeight:700, fontSize:12, color:"#78350f", marginBottom:2 }}>Contenido del research</div>
+              {result.data.summary && (
+                <div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#aaa", textTransform:"uppercase", marginBottom:4 }}>Resumen</div>
+                  <p style={{ fontSize:12, color:"#444", margin:0, lineHeight:1.6 }}>{result.data.summary}</p>
+                </div>
+              )}
+              {result.data.key_facts?.length > 0 && (
+                <div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#aaa", textTransform:"uppercase", marginBottom:4 }}>Hechos clave ({result.data.key_facts.length})</div>
+                  <ul style={{ margin:0, paddingLeft:16 }}>
+                    {result.data.key_facts.slice(0,5).map((f: string, i: number) => (
+                      <li key={i} style={{ fontSize:12, color:"#444", marginBottom:3, lineHeight:1.5 }}>{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {result.data.statistics?.length > 0 && (
+                <div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#aaa", textTransform:"uppercase", marginBottom:4 }}>Estadisticas ({result.data.statistics.length})</div>
+                  {result.data.statistics.map((s: any, i: number) => (
+                    <div key={i} style={{ fontSize:12, color:"#444", marginBottom:3 }}>
+                      <span>{s.data}</span>
+                      {s.source && <span style={{ color:"#aaa", marginLeft:6 }}>({s.source})</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {result.data.seo_opportunities?.length > 0 && (
+                <div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#aaa", textTransform:"uppercase", marginBottom:4 }}>Oportunidades SEO</div>
+                  <ul style={{ margin:0, paddingLeft:16 }}>
+                    {result.data.seo_opportunities.map((o: string, i: number) => (
+                      <li key={i} style={{ fontSize:12, color:"#444", marginBottom:3 }}>{o}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Raw preview if parse failed */}
+          {!result.data && result.raw_text_preview && (
+            <div style={{ background:"#1e293b", borderRadius:8, padding:"12px 16px" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#aaa", marginBottom:6 }}>RESPUESTA RAW (primeros 600 chars)</div>
+              <pre style={{ fontSize:11, color:"#94a3b8", margin:0, whiteSpace:"pre-wrap", wordBreak:"break-all" }}>{result.raw_text_preview}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Content age helpers ──
