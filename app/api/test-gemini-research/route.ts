@@ -3,8 +3,16 @@ import { NextRequest } from "next/server"
 // Test endpoint to compare Gemini + Google Search Grounding vs Perplexity sonar-pro
 // Same output schema as /api/research so results are comparable side-by-side
 
+const ALLOWED_MODELS = new Set([
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-001",
+])
+
 export async function POST(req: NextRequest) {
-  const { topic, model = "gemini-2.5-pro" } = await req.json()
+  let { topic, model = "gemini-2.5-pro" } = await req.json()
+  if (!ALLOWED_MODELS.has(model)) model = "gemini-2.5-pro"
   if (!topic?.trim()) return Response.json({ error: "topic requerido" }, { status: 400 })
 
   const prompt = `Eres un investigador SEO senior especializado en Colombia y Latinoamerica.
