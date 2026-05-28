@@ -1089,7 +1089,7 @@ export default function SEOCommandCenter() {
           <div>
             <h2 style={H2}>Superagente de Investigacion</h2>
             <p style={{ color:"#777", fontSize:13, marginTop:-12, marginBottom:20 }}>
-              Usa Perplexity para investigar en tiempo real. El contexto se integra automaticamente en la generacion de contenido.
+              Usa Gemini 2.5 Pro con Google Search para investigar en tiempo real. El contexto se integra automaticamente en la generacion de contenido.
             </p>
 
             {/* ── TEST GEMINI ── */}
@@ -1114,7 +1114,7 @@ export default function SEOCommandCenter() {
                 </div>
               </Field>
               <button onClick={runResearch} disabled={loading||!resTopic.trim()} style={{...BTN_BLUE, width:"100%", padding:"13px", opacity:loading||!resTopic.trim()?0.55:1, cursor:loading||!resTopic.trim()?"not-allowed":"pointer"}}>
-                {loading?"Investigando con Perplexity...":"Investigar ahora"}
+                {loading?"Investigando con Gemini...":"Investigar ahora"}
               </button>
             </div>
 
