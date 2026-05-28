@@ -7,7 +7,7 @@ const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const GEMINI_MODEL = "gemini-2.5-pro"
 const GEMINI_BASE  = "https://generativelanguage.googleapis.com/v1beta/models"
 
-async function fetchPageText(url: string): Promise<string> {
+async function fetchPageText(url: string): Promise<{ text: string; finalUrl: string }> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
@@ -17,7 +17,8 @@ async function fetchPageText(url: string): Promise<string> {
         "Accept-Language": "es-CO,es;q=0.9,en;q=0.8",
       },
     })
-    if (!res.ok) return ""
+    const finalUrl = res.url // actual URL after redirect
+    if (!res.ok) return { text: "", finalUrl }
     const html = await res.text()
     return html
       .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -29,8 +30,9 @@ async function fetchPageText(url: string): Promise<string> {
       .replace(/\s+/g, " ")
       .trim()
       .substring(0, 3500)
+    return { text, finalUrl }
   } catch {
-    return ""
+    return { text: "", finalUrl: url }
   }
 }
 
@@ -219,10 +221,10 @@ DEVUELVE SOLO JSON sin markdown ni bloques de codigo:
           )
 
           const pages = await Promise.all(
-            citationUrls.slice(0, scrapeLimit).map(async (url: string) => ({
-              url,
-              text: await fetchPageText(url),
-            }))
+            citationUrls.slice(0, scrapeLimit).map(async (url: string) => {
+              const { text, finalUrl } = await fetchPageText(url)
+              return { url: finalUrl, text } // use resolved URL so Claude knows the real domain
+            })
           )
 
           step("Analizando competidores con Claude Sonnet...")
