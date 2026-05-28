@@ -11,7 +11,7 @@ const ALLOWED_MODELS = new Set([
 ])
 
 export async function POST(req: NextRequest) {
-  let { topic, model = "gemini-2.5-pro" } = await req.json()
+  let { topic, model = "gemini-2.0-flash" } = await req.json()
   if (!ALLOWED_MODELS.has(model)) model = "gemini-2.5-pro"
   if (!topic?.trim()) return Response.json({ error: "topic requerido" }, { status: 400 })
 

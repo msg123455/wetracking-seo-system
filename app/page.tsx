@@ -2033,7 +2033,7 @@ function Empty({ text }: { text: string }) {
 // ── Gemini Research Test Panel ──
 function GeminiTestPanel() {
   const [topic,   setTopic]   = useState("")
-  const [model,   setModel]   = useState("gemini-2.5-pro")
+  const [model,   setModel]   = useState("gemini-2.0-flash")
   const [loading, setLoading] = useState(false)
   const [result,  setResult]  = useState<any>(null)
   const [error,   setError]   = useState<string|null>(null)
