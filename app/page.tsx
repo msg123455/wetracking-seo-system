@@ -80,12 +80,11 @@ export default function SEOCommandCenter() {
 
   // linkedin
   const [linkedinPosts,  setLinkedinPosts]  = useState<LinkedInPost[]>([])
-  const [liKeyword,      setLiKeyword]      = useState("")
-  const [liFormat,       setLiFormat]       = useState<"carousel"|"historia"|"insight"|"video">("carousel")
-  const [liPageId,       setLiPageId]       = useState("")
-  const [liPageType,     setLiPageType]     = useState("pillar")
+  const [allPages,       setAllPages]       = useState<Page[]>([])
+  const [liFormats,      setLiFormats]      = useState<Record<string,"carousel"|"historia"|"insight"|"video">>({})
   const [expandedLi,     setExpandedLi]     = useState<string|null>(null)
   const [copiedLi,       setCopiedLi]       = useState<string|null>(null)
+  const [generatingLi,   setGeneratingLi]   = useState<string|null>(null)
 
   // form – image
   const [imgDesc,      setImgDesc]      = useState("")
@@ -153,6 +152,7 @@ export default function SEOCommandCenter() {
       if (aR.ok) setAeoItems(await aR.json())
       const iR  = await fetch("/api/generate-image");  if (iR.ok)  setGenImages(await iR.json())
       const liR = await fetch("/api/linkedin");         if (liR.ok) setLinkedinPosts(await liR.json())
+      const pgR = await fetch("/api/pages");            if (pgR.ok) setAllPages(await pgR.json())
       if (sbR.ok) {
         const d = await sbR.json()
         setSitemapDefs(d.sitemaps || [])
@@ -741,156 +741,144 @@ export default function SEOCommandCenter() {
         )}
 
         {/* ══ LINKEDIN ══ */}
-        {tab==="linkedin" && (
+        {tab==="linkedin" && (() => {
+          const LI_FORMATS = [
+            { key:"carousel" as const, label:"Carrusel",  color:"#6f42c1", bg:"#f3eeff" },
+            { key:"historia" as const, label:"Historia",  color:"#007aed", bg:"#e8f4fd" },
+            { key:"insight"  as const, label:"Insight",   color:"#0d9488", bg:"#e0f7f5" },
+            { key:"video"    as const, label:"Video",     color:"#fd7e14", bg:"#fff3e8" },
+          ]
+
+          async function generateLiPost(page: Page, format: "carousel"|"historia"|"insight"|"video") {
+            setGeneratingLi(`${page.id}-${format}`)
+            startProgress(`LinkedIn ${format}: "${page.keyword}"`)
+            setLoading(true)
+            try {
+              addProgressStep(`Generando ${format} desde "${page.keyword}"...`, `Tipo: ${page.page_type}`)
+              const r = await fetch("/api/linkedin", {
+                method:"POST", headers:jsonHdr,
+                body: JSON.stringify({ keyword:page.keyword, page_type:page.page_type, format, page_id:page.id }),
+              })
+              const d = await r.json()
+              if (!r.ok) throw new Error(d.error)
+              finishProgress(true)
+              notify(`Post listo: ${format} para "${page.keyword}"`, "success")
+              loadData()
+            } catch (e:any) { finishProgress(false); notify("Error: "+e.message, "error") }
+            setGeneratingLi(null)
+            setLoading(false)
+          }
+
+          const postsById = linkedinPosts.reduce((acc:any, lp) => {
+            if (lp.page_id) { if (!acc[lp.page_id]) acc[lp.page_id] = []; acc[lp.page_id].push(lp) }
+            return acc
+          }, {} as Record<string, LinkedInPost[]>)
+
+          return (
           <div>
             <div style={{ marginBottom:24 }}>
               <h2 style={{ ...H2, marginBottom:4 }}>LinkedIn Content</h2>
               <p style={{ color:"#888", fontSize:13, margin:0 }}>
-                Convierte tus paginas SEO en posts de LinkedIn. 4 formatos: Carrusel, Historia, Insight y Script de Video.
+                Selecciona una pagina y elige el formato. El post se genera con el contenido real de esa pagina.
               </p>
             </div>
 
-            {/* ── Generador ── */}
-            <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", padding:24, marginBottom:24 }}>
-              <div style={{ fontWeight:700, color:"#0b194f", fontSize:14, marginBottom:16 }}>Generar nuevo post</div>
-
-              {/* Format selector */}
-              <Field label="Formato">
-                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  {([
-                    { key:"carousel", label:"Carrusel", desc:"6-8 laminas educativas", color:"#6f42c1" },
-                    { key:"historia", label:"Historia / Caso", desc:"Storytelling B2B", color:"#007aed" },
-                    { key:"insight",  label:"Insight / Opinion", desc:"Thought leadership", color:"#0d9488" },
-                    { key:"video",    label:"Script Video", desc:"45-75 segundos", color:"#fd7e14" },
-                  ] as const).map(f => (
-                    <button key={f.key} onClick={()=>setLiFormat(f.key)} style={{
-                      padding:"10px 16px", border:`2px solid ${liFormat===f.key ? f.color : "#e0e0e0"}`,
-                      borderRadius:10, cursor:"pointer", background: liFormat===f.key ? f.color+"14" : "white",
-                      textAlign:"left",
-                    }}>
-                      <div style={{ fontWeight:700, fontSize:13, color: liFormat===f.key ? f.color : "#333" }}>{f.label}</div>
-                      <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>{f.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </Field>
-
-              <div style={{ display:"flex", gap:14 }}>
-                <Field label="Keyword / Tema" style={{ flex:2 }}>
-                  <input value={liKeyword} onChange={e=>setLiKeyword(e.target.value)}
-                    placeholder="ej: gestión de inventarios RFID"
-                    style={{ ...INP, width:"100%", boxSizing:"border-box" }} />
-                </Field>
-                <Field label="Tipo de pagina" style={{ flex:1 }}>
-                  <select value={liPageType} onChange={e=>setLiPageType(e.target.value)} style={SEL}>
-                    <option value="pillar">Pillar</option>
-                    <option value="secondary">Secondary</option>
-                    <option value="third">Third</option>
-                    <option value="blog">Blog</option>
-                    <option value="general">General</option>
-                  </select>
-                </Field>
-              </div>
-
-              <Field label="Usar contenido de una pagina existente (opcional)">
-                <select value={liPageId} onChange={e=>setLiPageId(e.target.value)} style={SEL}>
-                  <option value="">Sin pagina — generar desde keyword</option>
-                  {[...pending, ...publishedSM.map((p:any) => ({ id:p.id, keyword:p.keyword, page_type:p.page_type || p.entity, content:{} }))].map((p:any) => (
-                    <option key={p.id} value={p.id}>{p.keyword} ({p.page_type})</option>
-                  ))}
-                </select>
-              </Field>
-
-              <button
-                onClick={async () => {
-                  if (!liKeyword.trim()) return
-                  startProgress(`LinkedIn ${liFormat}: "${liKeyword}"`)
-                  setLoading(true)
-                  try {
-                    addProgressStep(`Generando ${liFormat} con Claude Sonnet...`, `Keyword: "${liKeyword}" | Formato: ${liFormat}`)
-                    const r = await fetch("/api/linkedin", {
-                      method: "POST", headers: jsonHdr,
-                      body: JSON.stringify({ keyword:liKeyword, page_type:liPageType, format:liFormat, page_id:liPageId||undefined }),
-                    })
-                    const d = await r.json()
-                    if (!r.ok) throw new Error(d.error)
-                    finishProgress(true)
-                    notify(`Post LinkedIn listo: "${liKeyword}"`, "success")
-                    setLiKeyword(""); setLiPageId(""); loadData()
-                  } catch (e:any) { finishProgress(false); notify("Error: "+e.message, "error") }
-                  setLoading(false)
-                }}
-                disabled={loading || !liKeyword.trim()}
-                style={{ ...BTN_BLUE, width:"100%", padding:"13px", background:"#0077b5",
-                  opacity: loading||!liKeyword.trim() ? 0.55 : 1,
-                  cursor: loading||!liKeyword.trim() ? "not-allowed" : "pointer" }}
-              >
-                {loading ? "Generando..." : `Generar ${liFormat === "carousel" ? "Carrusel" : liFormat === "historia" ? "Historia" : liFormat === "insight" ? "Insight" : "Script Video"}`}
-              </button>
-            </div>
-
-            {/* ── Lista de posts ── */}
-            {linkedinPosts.length === 0
-              ? <Empty text="Sin posts generados. Crea tu primer contenido de LinkedIn arriba." />
-              : linkedinPosts.map(lp => {
-                const fmt = lp.format
-                const fmtColors: Record<string,{color:string;bg:string;label:string}> = {
-                  carousel: { color:"#6f42c1", bg:"#f3eeff", label:"Carrusel" },
-                  historia: { color:"#007aed", bg:"#e8f4fd", label:"Historia" },
-                  insight:  { color:"#0d9488", bg:"#e0f7f5", label:"Insight" },
-                  video:    { color:"#fd7e14", bg:"#fff3e8", label:"Video" },
-                }
-                const fc = fmtColors[fmt] || { color:"#aaa", bg:"#f5f5f5", label:fmt }
-                const hook = lp.post?.hook || lp.post?.post_completo?.substring(0,120) || ""
+            {allPages.length === 0
+              ? <Empty text="Sin paginas creadas. Genera primero contenido SEO desde Estructura SEO o Generar." />
+              : allPages.map(page => {
+                const pagePosts = postsById[page.id] || []
+                const ptc = PAGE_TYPE_COLORS[page.page_type] || { color:"#aaa", bg:"#f5f5f5", label:page.page_type }
+                const title = page.content?.title || page.keyword
 
                 return (
-                  <div key={lp.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:12, overflow:"hidden" }}>
-                    {/* Header */}
-                    <div style={{ padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                          <span style={{ fontSize:10, fontWeight:800, padding:"3px 10px", borderRadius:20, background:fc.bg, color:fc.color, flexShrink:0 }}>{fc.label}</span>
-                          <span style={{ fontWeight:700, color:"#0b194f", fontSize:13 }}>{lp.keyword}</span>
-                          <span style={{ fontSize:11, color:"#aaa" }}>({lp.page_type})</span>
+                  <div key={page.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:14, overflow:"hidden" }}>
+
+                    {/* Page header */}
+                    <div style={{ padding:"16px 20px", borderBottom: pagePosts.length > 0 ? "1px solid #f5f5f5" : "none" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                            <span style={{ fontSize:10, fontWeight:700, padding:"2px 9px", borderRadius:20, background:ptc.bg, color:ptc.color, flexShrink:0 }}>{ptc.label}</span>
+                            <span style={{ fontWeight:700, color:"#0b194f", fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{page.keyword}</span>
+                          </div>
+                          <p style={{ margin:0, fontSize:12, color:"#888", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{title !== page.keyword ? title : ""}</p>
                         </div>
-                        <p style={{ margin:0, fontSize:12, color:"#666", lineHeight:1.5, fontStyle:"italic" }}>"{hook.substring(0,160)}{hook.length>160?"...":""}"</p>
-                        {lp.post?.mejor_horario && (
-                          <div style={{ fontSize:11, color:"#aaa", marginTop:4 }}>Horario sugerido: {lp.post.mejor_horario}</div>
-                        )}
-                      </div>
-                      <div style={{ display:"flex", gap:7, flexShrink:0 }}>
-                        {(lp.post?.post_completo || lp.post?.post_text) && (
-                          <button onClick={()=>{
-                            const txt = lp.post.post_completo || lp.post.post_text || ""
-                            navigator.clipboard.writeText(txt)
-                            setCopiedLi(lp.id)
-                            setTimeout(()=>setCopiedLi(null), 2000)
-                          }} style={{ ...BTN_CYAN, background: copiedLi===lp.id ? "#d1fae5" : "#00ffd7", color: copiedLi===lp.id ? "#065f46" : "#0b194f" }}>
-                            {copiedLi===lp.id ? "Copiado!" : "Copiar post"}
-                          </button>
-                        )}
-                        <button onClick={()=>setExpandedLi(expandedLi===lp.id?null:lp.id)} style={BTN_GHOST}>
-                          {expandedLi===lp.id?"Cerrar":"Ver"}
-                        </button>
-                        <button onClick={async()=>{ await fetch("/api/linkedin",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:lp.id})}); loadData() }} style={BTN_DEL}>x</button>
+                        {/* Format buttons */}
+                        <div style={{ display:"flex", gap:6, flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                          {LI_FORMATS.map(f => {
+                            const alreadyDone = pagePosts.some(lp => lp.format === f.key)
+                            const isGenerating = generatingLi === `${page.id}-${f.key}`
+                            return (
+                              <button key={f.key}
+                                onClick={() => !loading && generateLiPost(page, f.key)}
+                                disabled={loading}
+                                style={{
+                                  padding:"7px 14px", borderRadius:8, cursor: loading ? "not-allowed" : "pointer",
+                                  border: `1.5px solid ${alreadyDone ? f.color : "#e0e0e0"}`,
+                                  background: alreadyDone ? f.bg : "white",
+                                  color: alreadyDone ? f.color : "#666",
+                                  fontSize:12, fontWeight: alreadyDone ? 700 : 400,
+                                  opacity: loading && !isGenerating ? 0.5 : 1,
+                                }}>
+                                {isGenerating ? "..." : (alreadyDone ? `✓ ${f.label}` : `+ ${f.label}`)}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Expanded view */}
-                    {expandedLi===lp.id && (
-                      <div style={{ borderTop:"1px solid #f0f0f0", background:"#fafafa", padding:"20px 22px" }}>
-                        {fmt === "carousel" && <CarouselView post={lp.post} />}
-                        {fmt === "historia" && <HistoriaView post={lp.post} />}
-                        {fmt === "insight"  && <InsightView  post={lp.post} />}
-                        {fmt === "video"    && <VideoView    post={lp.post} />}
-                      </div>
-                    )}
+                    {/* Generated posts for this page */}
+                    {pagePosts.map(lp => {
+                      const fc = LI_FORMATS.find(f => f.key === lp.format) || LI_FORMATS[0]
+                      const hook = lp.post?.hook || lp.post?.post_completo?.substring(0,140) || ""
+                      return (
+                        <div key={lp.id} style={{ borderTop:"1px solid #f5f5f5" }}>
+                          <div style={{ padding:"12px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, background:"#fafafa" }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+                                <span style={{ fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:20, background:fc.bg, color:fc.color }}>{fc.label}</span>
+                                {lp.post?.mejor_horario && <span style={{ fontSize:11, color:"#bbb" }}>{lp.post.mejor_horario}</span>}
+                              </div>
+                              <p style={{ margin:0, fontSize:12, color:"#666", fontStyle:"italic", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                "{hook.substring(0,150)}{hook.length>150?"...":""}"
+                              </p>
+                            </div>
+                            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                              {(lp.post?.post_completo || lp.post?.post_text) && (
+                                <button onClick={()=>{
+                                  navigator.clipboard.writeText(lp.post.post_completo || lp.post.post_text || "")
+                                  setCopiedLi(lp.id); setTimeout(()=>setCopiedLi(null),2000)
+                                }} style={{ ...BTN_CYAN, fontSize:11,
+                                  background: copiedLi===lp.id?"#d1fae5":"#00ffd7",
+                                  color: copiedLi===lp.id?"#065f46":"#0b194f" }}>
+                                  {copiedLi===lp.id?"Copiado!":"Copiar"}
+                                </button>
+                              )}
+                              <button onClick={()=>setExpandedLi(expandedLi===lp.id?null:lp.id)} style={{ ...BTN_GHOST, fontSize:11 }}>
+                                {expandedLi===lp.id?"Cerrar":"Ver"}
+                              </button>
+                              <button onClick={async()=>{await fetch("/api/linkedin",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:lp.id})});loadData()}} style={{ ...BTN_DEL, fontSize:11 }}>x</button>
+                            </div>
+                          </div>
+                          {expandedLi===lp.id && (
+                            <div style={{ padding:"20px 22px", borderTop:"1px solid #f0f0f0" }}>
+                              {lp.format==="carousel" && <CarouselView post={lp.post} />}
+                              {lp.format==="historia" && <HistoriaView post={lp.post} />}
+                              {lp.format==="insight"  && <InsightView  post={lp.post} />}
+                              {lp.format==="video"    && <VideoView    post={lp.post} />}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               })
             }
           </div>
-        )}
+          )
+        })()}
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (
