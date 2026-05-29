@@ -84,6 +84,7 @@ export default function SEOCommandCenter() {
   const [expandedLi,     setExpandedLi]     = useState<string|null>(null)
   const [copiedLi,       setCopiedLi]       = useState<string|null>(null)
   const [generatingLi,   setGeneratingLi]   = useState<string|null>(null)
+  const [liModal,        setLiModal]        = useState<LinkedInPost|null>(null)
 
   // form – image
   const [imgDesc,      setImgDesc]      = useState("")
@@ -816,23 +817,12 @@ export default function SEOCommandCenter() {
                               </span>
                             </div>
                             <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                              <button onClick={()=>{ navigator.clipboard.writeText(lp.text||""); setCopiedLi(lp.id); setTimeout(()=>setCopiedLi(null),2000) }}
-                                style={{ ...BTN_CYAN, fontSize:11, background:copiedLi===lp.id?"#d1fae5":"#00ffd7", color:copiedLi===lp.id?"#065f46":"#0b194f" }}>
-                                {copiedLi===lp.id?"Copiado!":"Copiar"}
-                              </button>
-                              <button onClick={()=>setExpandedLi(expandedLi===lp.id?null:lp.id)} style={{ ...BTN_GHOST, fontSize:11 }}>
-                                {expandedLi===lp.id?"Cerrar":"Ver"}
+                              <button onClick={()=>setLiModal(lp)} style={{ ...BTN_BLUE, fontSize:11, background:"#0077b5" }}>
+                                Ver post
                               </button>
                               <button onClick={async()=>{await fetch("/api/linkedin",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:lp.id})});loadData()}} style={{ ...BTN_DEL, fontSize:11 }}>x</button>
                             </div>
                           </div>
-                          {expandedLi===lp.id && (
-                            <div style={{ padding:"18px 22px", background:"white", borderTop:"1px solid #f0f0f0" }}>
-                              <pre style={{ margin:0, fontFamily:"system-ui,sans-serif", fontSize:13, color:"#333", lineHeight:1.8, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
-                                {lp.text}
-                              </pre>
-                            </div>
-                          )}
                         </div>
                       )
                     })}
@@ -1902,6 +1892,44 @@ export default function SEOCommandCenter() {
 
         </div>
       </div>
+      {/* ── LinkedIn Modal ── */}
+      {liModal && (
+        <div onClick={()=>setLiModal(null)} style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:24,
+        }}>
+          <div onClick={e=>e.stopPropagation()} style={{
+            background:"white", borderRadius:16, width:"100%", maxWidth:640,
+            maxHeight:"85vh", display:"flex", flexDirection:"column",
+            boxShadow:"0 24px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ padding:"16px 22px", borderBottom:"1px solid #f0f0f0", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:40, height:40, borderRadius:"50%", background:"#0077b5", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:16 }}>in</div>
+                <div>
+                  <div style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>WeTracking</div>
+                  <div style={{ fontSize:12, color:"#888" }}>{liModal.format_label || liModal.format} · {liModal.keyword}</div>
+                </div>
+              </div>
+              <button onClick={()=>setLiModal(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:22, color:"#aaa", lineHeight:1, padding:"4px 8px" }}>x</button>
+            </div>
+            <div style={{ padding:"22px 24px", overflowY:"auto", flex:1 }}>
+              <p style={{ margin:0, fontSize:14, color:"#1a1a1a", lineHeight:1.85, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+                {liModal.text}
+              </p>
+            </div>
+            <div style={{ padding:"14px 22px", borderTop:"1px solid #f0f0f0", display:"flex", gap:10, flexShrink:0 }}>
+              <button onClick={()=>{ navigator.clipboard.writeText(liModal.text||""); setCopiedLi(liModal.id); setTimeout(()=>setCopiedLi(null),2500) }}
+                style={{ flex:1, padding:"11px", background:copiedLi===liModal.id?"#d1fae5":"#0077b5", color:copiedLi===liModal.id?"#065f46":"white", border:"none", borderRadius:8, cursor:"pointer", fontWeight:700, fontSize:14 }}>
+                {copiedLi===liModal.id?"Copiado!":"Copiar post"}
+              </button>
+              <button onClick={()=>setLiModal(null)} style={{ padding:"11px 20px", background:"#f5f5f5", color:"#555", border:"none", borderRadius:8, cursor:"pointer", fontSize:13 }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
