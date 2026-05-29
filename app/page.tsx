@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useState, useEffect, useRef } from "react"
 
 // ── Types ──
@@ -25,7 +25,7 @@ type SitemapDef = { id: string; name: string; root_keyword: string; industry: st
 
 type Tab = "dashboard" | "activity" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates" | "linkedin"
 type GeneratedImage  = { id: string; url: string; description: string; created_at: string }
-type LinkedInPost   = { id: string; keyword: string; page_type: string; format: string; page_id: string | null; post: any; created_at: string }
+type LinkedInPost   = { id: string; keyword: string; page_type: string; format: string; format_label?: string; page_id: string | null; text: string; created_at: string }
 type ProgressItem  = { text: string; detail?: string; status: "pending" | "running" | "done" | "error" }
 type ProgressLog   = { id: string; title: string; success: boolean; completedAt: string }
 
@@ -81,7 +81,6 @@ export default function SEOCommandCenter() {
   // linkedin
   const [linkedinPosts,  setLinkedinPosts]  = useState<LinkedInPost[]>([])
   const [allPages,       setAllPages]       = useState<Page[]>([])
-  const [liFormats,      setLiFormats]      = useState<Record<string,"carousel"|"historia"|"insight"|"video">>({})
   const [expandedLi,     setExpandedLi]     = useState<string|null>(null)
   const [copiedLi,       setCopiedLi]       = useState<string|null>(null)
   const [generatingLi,   setGeneratingLi]   = useState<string|null>(null)
@@ -741,40 +740,7 @@ export default function SEOCommandCenter() {
         )}
 
         {/* ══ LINKEDIN ══ */}
-        {tab==="linkedin" && (() => {
-          const LI_FORMATS = [
-            { key:"carousel" as const, label:"Carrusel",  color:"#6f42c1", bg:"#f3eeff" },
-            { key:"historia" as const, label:"Historia",  color:"#007aed", bg:"#e8f4fd" },
-            { key:"insight"  as const, label:"Insight",   color:"#0d9488", bg:"#e0f7f5" },
-            { key:"video"    as const, label:"Video",     color:"#fd7e14", bg:"#fff3e8" },
-          ]
-
-          async function generateLiPost(page: Page, format: "carousel"|"historia"|"insight"|"video") {
-            setGeneratingLi(`${page.id}-${format}`)
-            startProgress(`LinkedIn ${format}: "${page.keyword}"`)
-            setLoading(true)
-            try {
-              addProgressStep(`Generando ${format} desde "${page.keyword}"...`, `Tipo: ${page.page_type}`)
-              const r = await fetch("/api/linkedin", {
-                method:"POST", headers:jsonHdr,
-                body: JSON.stringify({ keyword:page.keyword, page_type:page.page_type, format, page_id:page.id }),
-              })
-              const d = await r.json()
-              if (!r.ok) throw new Error(d.error)
-              finishProgress(true)
-              notify(`Post listo: ${format} para "${page.keyword}"`, "success")
-              loadData()
-            } catch (e:any) { finishProgress(false); notify("Error: "+e.message, "error") }
-            setGeneratingLi(null)
-            setLoading(false)
-          }
-
-          const postsById = linkedinPosts.reduce((acc:any, lp) => {
-            if (lp.page_id) { if (!acc[lp.page_id]) acc[lp.page_id] = []; acc[lp.page_id].push(lp) }
-            return acc
-          }, {} as Record<string, LinkedInPost[]>)
-
-          return (
+        {tab==="linkedin" && (
           <div>
             <div style={{ marginBottom:24 }}>
               <h2 style={{ ...H2, marginBottom:4 }}>LinkedIn Content</h2>
@@ -784,43 +750,52 @@ export default function SEOCommandCenter() {
             </div>
 
             {allPages.length === 0
-              ? <Empty text="Sin paginas creadas. Genera primero contenido SEO desde Estructura SEO o Generar." />
+              ? <Empty text="Sin paginas publicadas todavia. Publica paginas primero desde Pendientes." />
               : allPages.map(page => {
-                const pagePosts = postsById[page.id] || []
+                const LI_FMTS = [
+                  { key:"carousel", label:"Carrusel",  color:"#6f42c1", bg:"#f3eeff" },
+                  { key:"historia", label:"Historia",  color:"#007aed", bg:"#e8f4fd" },
+                  { key:"insight",  label:"Insight",   color:"#0d9488", bg:"#e0f7f5" },
+                  { key:"video",    label:"Video",     color:"#fd7e14", bg:"#fff3e8" },
+                ] as const
+                const pagePosts = linkedinPosts.filter(lp => lp.page_id === page.id)
                 const ptc = PAGE_TYPE_COLORS[page.page_type] || { color:"#aaa", bg:"#f5f5f5", label:page.page_type }
                 const title = page.content?.title || page.keyword
 
                 return (
                   <div key={page.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:14, overflow:"hidden" }}>
-
-                    {/* Page header */}
-                    <div style={{ padding:"16px 20px", borderBottom: pagePosts.length > 0 ? "1px solid #f5f5f5" : "none" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
+                    <div style={{ padding:"16px 20px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
                             <span style={{ fontSize:10, fontWeight:700, padding:"2px 9px", borderRadius:20, background:ptc.bg, color:ptc.color, flexShrink:0 }}>{ptc.label}</span>
-                            <span style={{ fontWeight:700, color:"#0b194f", fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{page.keyword}</span>
+                            <span style={{ fontWeight:700, color:"#0b194f", fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{page.keyword}</span>
                           </div>
-                          <p style={{ margin:0, fontSize:12, color:"#888", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{title !== page.keyword ? title : ""}</p>
+                          {title !== page.keyword && <p style={{ margin:0, fontSize:11, color:"#aaa", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{title}</p>}
                         </div>
-                        {/* Format buttons */}
-                        <div style={{ display:"flex", gap:6, flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end" }}>
-                          {LI_FORMATS.map(f => {
-                            const alreadyDone = pagePosts.some(lp => lp.format === f.key)
-                            const isGenerating = generatingLi === `${page.id}-${f.key}`
+                        <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                          {LI_FMTS.map(f => {
+                            const done = pagePosts.some(lp => lp.format === f.key)
+                            const busy = generatingLi === `${page.id}-${f.key}`
                             return (
-                              <button key={f.key}
-                                onClick={() => !loading && generateLiPost(page, f.key)}
-                                disabled={loading}
-                                style={{
-                                  padding:"7px 14px", borderRadius:8, cursor: loading ? "not-allowed" : "pointer",
-                                  border: `1.5px solid ${alreadyDone ? f.color : "#e0e0e0"}`,
-                                  background: alreadyDone ? f.bg : "white",
-                                  color: alreadyDone ? f.color : "#666",
-                                  fontSize:12, fontWeight: alreadyDone ? 700 : 400,
-                                  opacity: loading && !isGenerating ? 0.5 : 1,
-                                }}>
-                                {isGenerating ? "..." : (alreadyDone ? `✓ ${f.label}` : `+ ${f.label}`)}
+                              <button key={f.key} disabled={loading}
+                                onClick={async () => {
+                                  setGeneratingLi(`${page.id}-${f.key}`)
+                                  setLoading(true)
+                                  try {
+                                    const r = await fetch("/api/linkedin", { method:"POST", headers:jsonHdr,
+                                      body: JSON.stringify({ keyword:page.keyword, page_type:page.page_type, format:f.key, page_id:page.id }) })
+                                    const d = await r.json(); if (!r.ok) throw new Error(d.error)
+                                    notify(`Post listo: ${f.label} para "${page.keyword}"`, "success")
+                                    loadData()
+                                  } catch (e:any) { notify("Error: "+e.message, "error") }
+                                  setGeneratingLi(null); setLoading(false)
+                                }}
+                                style={{ padding:"6px 12px", borderRadius:8, border:`1.5px solid ${done?f.color:"#e0e0e0"}`,
+                                  background:done?f.bg:"white", color:done?f.color:"#666",
+                                  fontSize:11, fontWeight:done?700:400, cursor:loading?"not-allowed":"pointer",
+                                  opacity:loading&&!busy?0.5:1 }}>
+                                {busy ? "..." : done ? `✓ ${f.label}` : `+ ${f.label}`}
                               </button>
                             )
                           })}
@@ -828,33 +803,23 @@ export default function SEOCommandCenter() {
                       </div>
                     </div>
 
-                    {/* Generated posts for this page */}
                     {pagePosts.map(lp => {
-                      const fc = LI_FORMATS.find(f => f.key === lp.format) || LI_FORMATS[0]
-                      const hook = lp.post?.hook || lp.post?.post_completo?.substring(0,140) || ""
+                      const fc = LI_FMTS.find(f => f.key === lp.format) || LI_FMTS[0]
+                      const preview = (lp.text||"").split("\n").find((l:string) => l.trim().length > 10) || ""
                       return (
-                        <div key={lp.id} style={{ borderTop:"1px solid #f5f5f5" }}>
-                          <div style={{ padding:"12px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, background:"#fafafa" }}>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
-                                <span style={{ fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:20, background:fc.bg, color:fc.color }}>{fc.label}</span>
-                                {lp.post?.mejor_horario && <span style={{ fontSize:11, color:"#bbb" }}>{lp.post.mejor_horario}</span>}
-                              </div>
-                              <p style={{ margin:0, fontSize:12, color:"#666", fontStyle:"italic", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                                "{hook.substring(0,150)}{hook.length>150?"...":""}"
-                              </p>
+                        <div key={lp.id} style={{ borderTop:"1px solid #f0f0f0" }}>
+                          <div style={{ padding:"10px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:"#fafafa" }}>
+                            <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:8 }}>
+                              <span style={{ fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:20, background:fc.bg, color:fc.color, flexShrink:0 }}>{fc.label}</span>
+                              <span style={{ fontSize:12, color:"#666", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontStyle:"italic" }}>
+                                {preview.substring(0,100)}{preview.length>100?"...":""}
+                              </span>
                             </div>
                             <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                              {(lp.post?.post_completo || lp.post?.post_text) && (
-                                <button onClick={()=>{
-                                  navigator.clipboard.writeText(lp.post.post_completo || lp.post.post_text || "")
-                                  setCopiedLi(lp.id); setTimeout(()=>setCopiedLi(null),2000)
-                                }} style={{ ...BTN_CYAN, fontSize:11,
-                                  background: copiedLi===lp.id?"#d1fae5":"#00ffd7",
-                                  color: copiedLi===lp.id?"#065f46":"#0b194f" }}>
-                                  {copiedLi===lp.id?"Copiado!":"Copiar"}
-                                </button>
-                              )}
+                              <button onClick={()=>{ navigator.clipboard.writeText(lp.text||""); setCopiedLi(lp.id); setTimeout(()=>setCopiedLi(null),2000) }}
+                                style={{ ...BTN_CYAN, fontSize:11, background:copiedLi===lp.id?"#d1fae5":"#00ffd7", color:copiedLi===lp.id?"#065f46":"#0b194f" }}>
+                                {copiedLi===lp.id?"Copiado!":"Copiar"}
+                              </button>
                               <button onClick={()=>setExpandedLi(expandedLi===lp.id?null:lp.id)} style={{ ...BTN_GHOST, fontSize:11 }}>
                                 {expandedLi===lp.id?"Cerrar":"Ver"}
                               </button>
@@ -862,11 +827,10 @@ export default function SEOCommandCenter() {
                             </div>
                           </div>
                           {expandedLi===lp.id && (
-                            <div style={{ padding:"20px 22px", borderTop:"1px solid #f0f0f0" }}>
-                              {lp.format==="carousel" && <CarouselView post={lp.post} />}
-                              {lp.format==="historia" && <HistoriaView post={lp.post} />}
-                              {lp.format==="insight"  && <InsightView  post={lp.post} />}
-                              {lp.format==="video"    && <VideoView    post={lp.post} />}
+                            <div style={{ padding:"18px 22px", background:"white", borderTop:"1px solid #f0f0f0" }}>
+                              <pre style={{ margin:0, fontFamily:"system-ui,sans-serif", fontSize:13, color:"#333", lineHeight:1.8, whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+                                {lp.text}
+                              </pre>
                             </div>
                           )}
                         </div>
@@ -877,8 +841,7 @@ export default function SEOCommandCenter() {
               })
             }
           </div>
-          )
-        })()}
+        )}
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (
@@ -2325,166 +2288,6 @@ function GeminiTestPanel() {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── LinkedIn format views ──────────────────────────────────────────────────
-
-function LiSection({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom:16 }}>
-      <div style={{ fontSize:10, fontWeight:800, color:"#aaa", textTransform:"uppercase", letterSpacing:0.8, marginBottom:6 }}>{label}</div>
-      {children}
-    </div>
-  )
-}
-
-function LiText({ text }: { text?: string }) {
-  if (!text) return null
-  return <p style={{ margin:0, fontSize:13, color:"#333", lineHeight:1.7, whiteSpace:"pre-line" }}>{text}</p>
-}
-
-function LiHashtags({ tags }: { tags?: string[] }) {
-  if (!tags?.length) return null
-  return (
-    <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
-      {tags.map((t,i) => <span key={i} style={{ fontSize:11, color:"#0077b5", background:"#e8f4fd", padding:"3px 10px", borderRadius:20, fontWeight:600 }}>{t}</span>)}
-    </div>
-  )
-}
-
-function CarouselView({ post }: { post: any }) {
-  return (
-    <div>
-      <LiSection label="Hook del post">
-        <LiText text={post.hook} />
-      </LiSection>
-      <LiSection label="Texto del post">
-        <LiText text={post.post_text} />
-        <LiHashtags tags={post.hashtags} />
-      </LiSection>
-      {post.slides?.length > 0 && (
-        <LiSection label={`Laminas del carrusel (${post.slides.length})`}>
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {post.slides.map((s: any) => (
-              <div key={s.numero} style={{ padding:"12px 16px", background:"white", borderRadius:8, border:"1px solid #e0e0e0", borderLeft:`4px solid ${s.tipo==="portada"?"#6f42c1":s.tipo==="cta"?"#00ffd7":"#ddd"}` }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                  <span style={{ fontSize:10, fontWeight:800, color:"#aaa", background:"#f5f5f5", padding:"2px 7px", borderRadius:4 }}>#{s.numero}</span>
-                  <span style={{ fontWeight:700, fontSize:13, color:"#0b194f" }}>{s.titulo}</span>
-                  {s.subtitulo && <span style={{ fontSize:11, color:"#888" }}>{s.subtitulo}</span>}
-                </div>
-                {s.contenido && <p style={{ margin:0, fontSize:12, color:"#555", lineHeight:1.6 }}>{s.contenido}</p>}
-              </div>
-            ))}
-          </div>
-        </LiSection>
-      )}
-      {post.nota_diseno && (
-        <LiSection label="Nota de diseno">
-          <p style={{ margin:0, fontSize:12, color:"#856404", background:"#fff3cd", padding:"8px 12px", borderRadius:6 }}>{post.nota_diseno}</p>
-        </LiSection>
-      )}
-      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
-    </div>
-  )
-}
-
-function HistoriaView({ post }: { post: any }) {
-  const sections = [
-    { label:"Situacion", text: post.situacion },
-    { label:"Problema", text: post.problema },
-    { label:"Solucion", text: post.solucion },
-    { label:"Resultado", text: post.resultado },
-    { label:"Leccion", text: post.leccion },
-    { label:"Cierre / CTA", text: post.cierre },
-  ]
-  return (
-    <div>
-      <LiSection label="Hook">
-        <LiText text={post.hook} />
-      </LiSection>
-      <LiSection label="Post completo (listo para copiar)">
-        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"16px 18px" }}>
-          <LiText text={post.post_completo} />
-        </div>
-        <LiHashtags tags={post.hashtags} />
-      </LiSection>
-      <LiSection label="Estructura narrativa">
-        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          {sections.map((s,i) => s.text && (
-            <div key={i} style={{ padding:"10px 14px", background:"white", borderRadius:8, border:"1px solid #eee", borderLeft:"3px solid #007aed" }}>
-              <div style={{ fontSize:10, fontWeight:800, color:"#007aed", textTransform:"uppercase", marginBottom:4 }}>{s.label}</div>
-              <p style={{ margin:0, fontSize:12, color:"#444", lineHeight:1.6 }}>{s.text}</p>
-            </div>
-          ))}
-        </div>
-      </LiSection>
-      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
-    </div>
-  )
-}
-
-function InsightView({ post }: { post: any }) {
-  return (
-    <div>
-      <LiSection label="Hook">
-        <LiText text={post.hook} />
-      </LiSection>
-      <LiSection label="Post completo (listo para copiar)">
-        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"16px 18px" }}>
-          <LiText text={post.post_completo} />
-        </div>
-        <LiHashtags tags={post.hashtags} />
-      </LiSection>
-      {post.puntos_clave?.length > 0 && (
-        <LiSection label="Puntos clave del argumento">
-          <ul style={{ margin:0, paddingLeft:18 }}>
-            {post.puntos_clave.map((p: string, i: number) => (
-              <li key={i} style={{ fontSize:12, color:"#444", marginBottom:4, lineHeight:1.5 }}>{p}</li>
-            ))}
-          </ul>
-        </LiSection>
-      )}
-      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
-    </div>
-  )
-}
-
-function VideoView({ post }: { post: any }) {
-  return (
-    <div>
-      <LiSection label="Titulo del video">
-        <p style={{ margin:0, fontSize:15, fontWeight:700, color:"#0b194f" }}>{post.titulo}</p>
-        <span style={{ fontSize:11, color:"#aaa" }}>{post.duracion_estimada}</span>
-      </LiSection>
-      {post.guion?.length > 0 && (
-        <LiSection label="Guion">
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {post.guion.map((g: any, i: number) => (
-              <div key={i} style={{ padding:"10px 14px", background:"white", borderRadius:8, border:"1px solid #eee", display:"flex", gap:12 }}>
-                <span style={{ fontSize:11, fontWeight:800, color:"#fd7e14", flexShrink:0, minWidth:50 }}>{g.tiempo}</span>
-                <div style={{ flex:1 }}>
-                  <p style={{ margin:"0 0 4px", fontSize:12, color:"#333", lineHeight:1.5 }}>{g.texto}</p>
-                  {g.indicacion && <p style={{ margin:0, fontSize:11, color:"#aaa", fontStyle:"italic" }}>{g.indicacion}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </LiSection>
-      )}
-      <LiSection label="Texto del post">
-        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"14px 16px" }}>
-          <LiText text={post.texto_post} />
-        </div>
-        <LiHashtags tags={post.hashtags} />
-      </LiSection>
-      {post.tip_produccion && (
-        <LiSection label="Tip de produccion">
-          <p style={{ margin:0, fontSize:12, color:"#856404", background:"#fff3cd", padding:"8px 12px", borderRadius:6 }}>{post.tip_produccion}</p>
-        </LiSection>
-      )}
-      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
     </div>
   )
 }
