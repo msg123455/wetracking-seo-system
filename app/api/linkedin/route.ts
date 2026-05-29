@@ -11,13 +11,17 @@ const FORMAT_LABELS: Record<string, string> = {
   video:    "Script de video (45-75 segundos)",
 }
 
-function buildPrompt(format: string, keyword: string, pageType: string, contentSnippet: string): string {
+function buildPrompt(format: string, keyword: string, pageType: string, contentSnippet: string, pageUrl?: string): string {
+  const linkLine = pageUrl
+    ? `\n- Al final del post, ANTES de los hashtags, incluye exactamente esta línea: "Lee el artículo completo: ${pageUrl}"`
+    : ""
+
   const context = `
 CONTEXTO DE LA EMPRESA:
 WeTracking es una empresa colombiana especializada en trazabilidad y tecnología RFID para cadenas de suministro en Latinoamérica. Trabajan con empresas de manufactura, logística, retail y agroindustria. Su propuesta de valor: visibilidad total del inventario y activos en tiempo real.
 
 REGLAS DEL POST (OBLIGATORIAS):
-- Idioma: español latinoamericano, tono consultivo y directo. NUNCA corporativo ni vendedor.
+- Idioma: español latinoamericano, tono consultivo y directo. NUNCA corporativo ni vendedor.${linkLine}
 - PROHIBIDO: "Estamos orgullosos", "Nos complace", "Soluciones integrales", "De la mano de"
 - Empieza directo con el gancho. Sin saludos ni presentaciones.
 - Usa saltos de línea para facilitar la lectura en móvil (párrafos cortos).
@@ -105,7 +109,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { keyword, page_type, format, page_id } = await req.json()
+    const { keyword, page_type, format, page_id, page_url } = await req.json()
     if (!keyword?.trim()) return Response.json({ error: "keyword requerida" }, { status: 400 })
     if (!format)          return Response.json({ error: "format requerido" },  { status: 400 })
 
@@ -138,7 +142,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const prompt = buildPrompt(format, keyword, page_type || "general", contentSnippet)
+    const prompt = buildPrompt(format, keyword, page_type || "general", contentSnippet, page_url || undefined)
 
     const message = await claude.messages.create({
       model: "claude-sonnet-4-6",
@@ -154,7 +158,8 @@ export async function POST(req: NextRequest) {
       page_type: page_type || "general",
       format,
       format_label: FORMAT_LABELS[format] || format,
-      page_id: page_id || null,
+      page_id:  page_id  || null,
+      page_url: page_url || null,
       text,
       created_at: new Date().toISOString(),
     }

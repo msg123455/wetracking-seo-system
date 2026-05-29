@@ -25,7 +25,7 @@ type SitemapDef = { id: string; name: string; root_keyword: string; industry: st
 
 type Tab = "dashboard" | "activity" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates" | "linkedin"
 type GeneratedImage  = { id: string; url: string; description: string; created_at: string }
-type LinkedInPost   = { id: string; keyword: string; page_type: string; format: string; format_label?: string; page_id: string | null; text: string; created_at: string }
+type LinkedInPost   = { id: string; keyword: string; page_type: string; format: string; format_label?: string; page_id: string | null; page_url?: string | null; text: string; created_at: string }
 type ProgressItem  = { text: string; detail?: string; status: "pending" | "running" | "done" | "error" }
 type ProgressLog   = { id: string; title: string; success: boolean; completedAt: string }
 
@@ -785,7 +785,7 @@ export default function SEOCommandCenter() {
                                   setLoading(true)
                                   try {
                                     const r = await fetch("/api/linkedin", { method:"POST", headers:jsonHdr,
-                                      body: JSON.stringify({ keyword:page.keyword, page_type:page.page_type, format:f.key, page_id:page.id }) })
+                                      body: JSON.stringify({ keyword:page.keyword, page_type:page.page_type, format:f.key, page_id:page.id, page_url:(page as any).page_url||undefined }) })
                                     const d = await r.json(); if (!r.ok) throw new Error(d.error)
                                     notify(`Post listo: ${f.label} para "${page.keyword}"`, "success")
                                     loadData()
@@ -1908,7 +1908,8 @@ export default function SEOCommandCenter() {
                 <div style={{ width:40, height:40, borderRadius:"50%", background:"#0077b5", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:16 }}>in</div>
                 <div>
                   <div style={{ fontWeight:700, color:"#0b194f", fontSize:14 }}>WeTracking</div>
-                  <div style={{ fontSize:12, color:"#888" }}>{liModal.format_label || liModal.format} · {liModal.keyword}</div>
+<div style={{ fontSize:12, color:"#888" }}>{liModal.format_label || liModal.format} · {liModal.keyword}</div>
+                  {liModal.page_url && <div style={{ fontSize:11, marginTop:2 }}><a href={liModal.page_url} target="_blank" rel="noopener" style={{ color:"#0077b5", textDecoration:"none" }}>{liModal.page_url}</a></div>}
                 </div>
               </div>
               <button onClick={()=>setLiModal(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:22, color:"#aaa", lineHeight:1, padding:"4px 8px" }}>x</button>
