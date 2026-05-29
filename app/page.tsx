@@ -23,8 +23,9 @@ type SitemapNode = {
 }
 type SitemapDef = { id: string; name: string; root_keyword: string; industry: string; node_count: number; created_at: string }
 
-type Tab = "dashboard" | "activity" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates"
-type GeneratedImage = { id: string; url: string; description: string; created_at: string }
+type Tab = "dashboard" | "activity" | "sitemapbuild" | "keywords" | "research" | "generate" | "pending" | "youtube" | "aeo" | "clusters" | "published" | "images" | "updates" | "linkedin"
+type GeneratedImage  = { id: string; url: string; description: string; created_at: string }
+type LinkedInPost   = { id: string; keyword: string; page_type: string; format: string; page_id: string | null; post: any; created_at: string }
 type ProgressItem  = { text: string; detail?: string; status: "pending" | "running" | "done" | "error" }
 type ProgressLog   = { id: string; title: string; success: boolean; completedAt: string }
 
@@ -76,6 +77,15 @@ export default function SEOCommandCenter() {
   const [genCluster,   setGenCluster]   = useState("")
   const [genPillar,    setGenPillar]    = useState("")
   const [genResearch,  setGenResearch]  = useState("")
+
+  // linkedin
+  const [linkedinPosts,  setLinkedinPosts]  = useState<LinkedInPost[]>([])
+  const [liKeyword,      setLiKeyword]      = useState("")
+  const [liFormat,       setLiFormat]       = useState<"carousel"|"historia"|"insight"|"video">("carousel")
+  const [liPageId,       setLiPageId]       = useState("")
+  const [liPageType,     setLiPageType]     = useState("pillar")
+  const [expandedLi,     setExpandedLi]     = useState<string|null>(null)
+  const [copiedLi,       setCopiedLi]       = useState<string|null>(null)
 
   // form – image
   const [imgDesc,      setImgDesc]      = useState("")
@@ -141,7 +151,8 @@ export default function SEOCommandCenter() {
       if (rR.ok) setResearch(await rR.json())
       if (yR.ok) setYtScripts(await yR.json())
       if (aR.ok) setAeoItems(await aR.json())
-      const iR = await fetch("/api/generate-image"); if (iR.ok) setGenImages(await iR.json())
+      const iR  = await fetch("/api/generate-image");  if (iR.ok)  setGenImages(await iR.json())
+      const liR = await fetch("/api/linkedin");         if (liR.ok) setLinkedinPosts(await liR.json())
       if (sbR.ok) {
         const d = await sbR.json()
         setSitemapDefs(d.sitemaps || [])
@@ -528,6 +539,9 @@ export default function SEOCommandCenter() {
       { key:"published", label:"Publicadas",       count: publishedSM.length },
       { key:"updates",   label:"Actualizaciones",  count: staleCount,          alertRed: staleCount > 0 },
     ]},
+    { section: "REDES", items: [
+      { key:"linkedin", label:"LinkedIn",  count: linkedinPosts.length },
+    ]},
     { section: "OPTIMIZACION", items: [
       { key:"aeo",     label:"AEO",       count: aeoItems.filter((a:any)=>a.aeo).length },
       { key:"youtube", label:"YouTube",   count: ytScripts.length },
@@ -723,6 +737,158 @@ export default function SEOCommandCenter() {
             {!progressTitle && progressHistory.length === 0 && (
               <Empty text="Sin actividad reciente. Cuando inicies un research o generacion de contenido, el proceso aparece aqui en tiempo real." />
             )}
+          </div>
+        )}
+
+        {/* ══ LINKEDIN ══ */}
+        {tab==="linkedin" && (
+          <div>
+            <div style={{ marginBottom:24 }}>
+              <h2 style={{ ...H2, marginBottom:4 }}>LinkedIn Content</h2>
+              <p style={{ color:"#888", fontSize:13, margin:0 }}>
+                Convierte tus paginas SEO en posts de LinkedIn. 4 formatos: Carrusel, Historia, Insight y Script de Video.
+              </p>
+            </div>
+
+            {/* ── Generador ── */}
+            <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", padding:24, marginBottom:24 }}>
+              <div style={{ fontWeight:700, color:"#0b194f", fontSize:14, marginBottom:16 }}>Generar nuevo post</div>
+
+              {/* Format selector */}
+              <Field label="Formato">
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {([
+                    { key:"carousel", label:"Carrusel", desc:"6-8 laminas educativas", color:"#6f42c1" },
+                    { key:"historia", label:"Historia / Caso", desc:"Storytelling B2B", color:"#007aed" },
+                    { key:"insight",  label:"Insight / Opinion", desc:"Thought leadership", color:"#0d9488" },
+                    { key:"video",    label:"Script Video", desc:"45-75 segundos", color:"#fd7e14" },
+                  ] as const).map(f => (
+                    <button key={f.key} onClick={()=>setLiFormat(f.key)} style={{
+                      padding:"10px 16px", border:`2px solid ${liFormat===f.key ? f.color : "#e0e0e0"}`,
+                      borderRadius:10, cursor:"pointer", background: liFormat===f.key ? f.color+"14" : "white",
+                      textAlign:"left",
+                    }}>
+                      <div style={{ fontWeight:700, fontSize:13, color: liFormat===f.key ? f.color : "#333" }}>{f.label}</div>
+                      <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>{f.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              <div style={{ display:"flex", gap:14 }}>
+                <Field label="Keyword / Tema" style={{ flex:2 }}>
+                  <input value={liKeyword} onChange={e=>setLiKeyword(e.target.value)}
+                    placeholder="ej: gestión de inventarios RFID"
+                    style={{ ...INP, width:"100%", boxSizing:"border-box" }} />
+                </Field>
+                <Field label="Tipo de pagina" style={{ flex:1 }}>
+                  <select value={liPageType} onChange={e=>setLiPageType(e.target.value)} style={SEL}>
+                    <option value="pillar">Pillar</option>
+                    <option value="secondary">Secondary</option>
+                    <option value="third">Third</option>
+                    <option value="blog">Blog</option>
+                    <option value="general">General</option>
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Usar contenido de una pagina existente (opcional)">
+                <select value={liPageId} onChange={e=>setLiPageId(e.target.value)} style={SEL}>
+                  <option value="">Sin pagina — generar desde keyword</option>
+                  {[...pending, ...publishedSM.map((p:any) => ({ id:p.id, keyword:p.keyword, page_type:p.page_type || p.entity, content:{} }))].map((p:any) => (
+                    <option key={p.id} value={p.id}>{p.keyword} ({p.page_type})</option>
+                  ))}
+                </select>
+              </Field>
+
+              <button
+                onClick={async () => {
+                  if (!liKeyword.trim()) return
+                  startProgress(`LinkedIn ${liFormat}: "${liKeyword}"`)
+                  setLoading(true)
+                  try {
+                    addProgressStep(`Generando ${liFormat} con Claude Sonnet...`, `Keyword: "${liKeyword}" | Formato: ${liFormat}`)
+                    const r = await fetch("/api/linkedin", {
+                      method: "POST", headers: jsonHdr,
+                      body: JSON.stringify({ keyword:liKeyword, page_type:liPageType, format:liFormat, page_id:liPageId||undefined }),
+                    })
+                    const d = await r.json()
+                    if (!r.ok) throw new Error(d.error)
+                    finishProgress(true)
+                    notify(`Post LinkedIn listo: "${liKeyword}"`, "success")
+                    setLiKeyword(""); setLiPageId(""); loadData()
+                  } catch (e:any) { finishProgress(false); notify("Error: "+e.message, "error") }
+                  setLoading(false)
+                }}
+                disabled={loading || !liKeyword.trim()}
+                style={{ ...BTN_BLUE, width:"100%", padding:"13px", background:"#0077b5",
+                  opacity: loading||!liKeyword.trim() ? 0.55 : 1,
+                  cursor: loading||!liKeyword.trim() ? "not-allowed" : "pointer" }}
+              >
+                {loading ? "Generando..." : `Generar ${liFormat === "carousel" ? "Carrusel" : liFormat === "historia" ? "Historia" : liFormat === "insight" ? "Insight" : "Script Video"}`}
+              </button>
+            </div>
+
+            {/* ── Lista de posts ── */}
+            {linkedinPosts.length === 0
+              ? <Empty text="Sin posts generados. Crea tu primer contenido de LinkedIn arriba." />
+              : linkedinPosts.map(lp => {
+                const fmt = lp.format
+                const fmtColors: Record<string,{color:string;bg:string;label:string}> = {
+                  carousel: { color:"#6f42c1", bg:"#f3eeff", label:"Carrusel" },
+                  historia: { color:"#007aed", bg:"#e8f4fd", label:"Historia" },
+                  insight:  { color:"#0d9488", bg:"#e0f7f5", label:"Insight" },
+                  video:    { color:"#fd7e14", bg:"#fff3e8", label:"Video" },
+                }
+                const fc = fmtColors[fmt] || { color:"#aaa", bg:"#f5f5f5", label:fmt }
+                const hook = lp.post?.hook || lp.post?.post_completo?.substring(0,120) || ""
+
+                return (
+                  <div key={lp.id} style={{ background:"white", borderRadius:12, border:"1px solid #eee", marginBottom:12, overflow:"hidden" }}>
+                    {/* Header */}
+                    <div style={{ padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                          <span style={{ fontSize:10, fontWeight:800, padding:"3px 10px", borderRadius:20, background:fc.bg, color:fc.color, flexShrink:0 }}>{fc.label}</span>
+                          <span style={{ fontWeight:700, color:"#0b194f", fontSize:13 }}>{lp.keyword}</span>
+                          <span style={{ fontSize:11, color:"#aaa" }}>({lp.page_type})</span>
+                        </div>
+                        <p style={{ margin:0, fontSize:12, color:"#666", lineHeight:1.5, fontStyle:"italic" }}>"{hook.substring(0,160)}{hook.length>160?"...":""}"</p>
+                        {lp.post?.mejor_horario && (
+                          <div style={{ fontSize:11, color:"#aaa", marginTop:4 }}>Horario sugerido: {lp.post.mejor_horario}</div>
+                        )}
+                      </div>
+                      <div style={{ display:"flex", gap:7, flexShrink:0 }}>
+                        {(lp.post?.post_completo || lp.post?.post_text) && (
+                          <button onClick={()=>{
+                            const txt = lp.post.post_completo || lp.post.post_text || ""
+                            navigator.clipboard.writeText(txt)
+                            setCopiedLi(lp.id)
+                            setTimeout(()=>setCopiedLi(null), 2000)
+                          }} style={{ ...BTN_CYAN, background: copiedLi===lp.id ? "#d1fae5" : "#00ffd7", color: copiedLi===lp.id ? "#065f46" : "#0b194f" }}>
+                            {copiedLi===lp.id ? "Copiado!" : "Copiar post"}
+                          </button>
+                        )}
+                        <button onClick={()=>setExpandedLi(expandedLi===lp.id?null:lp.id)} style={BTN_GHOST}>
+                          {expandedLi===lp.id?"Cerrar":"Ver"}
+                        </button>
+                        <button onClick={async()=>{ await fetch("/api/linkedin",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:lp.id})}); loadData() }} style={BTN_DEL}>x</button>
+                      </div>
+                    </div>
+
+                    {/* Expanded view */}
+                    {expandedLi===lp.id && (
+                      <div style={{ borderTop:"1px solid #f0f0f0", background:"#fafafa", padding:"20px 22px" }}>
+                        {fmt === "carousel" && <CarouselView post={lp.post} />}
+                        {fmt === "historia" && <HistoriaView post={lp.post} />}
+                        {fmt === "insight"  && <InsightView  post={lp.post} />}
+                        {fmt === "video"    && <VideoView    post={lp.post} />}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            }
           </div>
         )}
 
@@ -2171,6 +2337,166 @@ function GeminiTestPanel() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── LinkedIn format views ──────────────────────────────────────────────────
+
+function LiSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ fontSize:10, fontWeight:800, color:"#aaa", textTransform:"uppercase", letterSpacing:0.8, marginBottom:6 }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+function LiText({ text }: { text?: string }) {
+  if (!text) return null
+  return <p style={{ margin:0, fontSize:13, color:"#333", lineHeight:1.7, whiteSpace:"pre-line" }}>{text}</p>
+}
+
+function LiHashtags({ tags }: { tags?: string[] }) {
+  if (!tags?.length) return null
+  return (
+    <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
+      {tags.map((t,i) => <span key={i} style={{ fontSize:11, color:"#0077b5", background:"#e8f4fd", padding:"3px 10px", borderRadius:20, fontWeight:600 }}>{t}</span>)}
+    </div>
+  )
+}
+
+function CarouselView({ post }: { post: any }) {
+  return (
+    <div>
+      <LiSection label="Hook del post">
+        <LiText text={post.hook} />
+      </LiSection>
+      <LiSection label="Texto del post">
+        <LiText text={post.post_text} />
+        <LiHashtags tags={post.hashtags} />
+      </LiSection>
+      {post.slides?.length > 0 && (
+        <LiSection label={`Laminas del carrusel (${post.slides.length})`}>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {post.slides.map((s: any) => (
+              <div key={s.numero} style={{ padding:"12px 16px", background:"white", borderRadius:8, border:"1px solid #e0e0e0", borderLeft:`4px solid ${s.tipo==="portada"?"#6f42c1":s.tipo==="cta"?"#00ffd7":"#ddd"}` }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                  <span style={{ fontSize:10, fontWeight:800, color:"#aaa", background:"#f5f5f5", padding:"2px 7px", borderRadius:4 }}>#{s.numero}</span>
+                  <span style={{ fontWeight:700, fontSize:13, color:"#0b194f" }}>{s.titulo}</span>
+                  {s.subtitulo && <span style={{ fontSize:11, color:"#888" }}>{s.subtitulo}</span>}
+                </div>
+                {s.contenido && <p style={{ margin:0, fontSize:12, color:"#555", lineHeight:1.6 }}>{s.contenido}</p>}
+              </div>
+            ))}
+          </div>
+        </LiSection>
+      )}
+      {post.nota_diseno && (
+        <LiSection label="Nota de diseno">
+          <p style={{ margin:0, fontSize:12, color:"#856404", background:"#fff3cd", padding:"8px 12px", borderRadius:6 }}>{post.nota_diseno}</p>
+        </LiSection>
+      )}
+      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
+    </div>
+  )
+}
+
+function HistoriaView({ post }: { post: any }) {
+  const sections = [
+    { label:"Situacion", text: post.situacion },
+    { label:"Problema", text: post.problema },
+    { label:"Solucion", text: post.solucion },
+    { label:"Resultado", text: post.resultado },
+    { label:"Leccion", text: post.leccion },
+    { label:"Cierre / CTA", text: post.cierre },
+  ]
+  return (
+    <div>
+      <LiSection label="Hook">
+        <LiText text={post.hook} />
+      </LiSection>
+      <LiSection label="Post completo (listo para copiar)">
+        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"16px 18px" }}>
+          <LiText text={post.post_completo} />
+        </div>
+        <LiHashtags tags={post.hashtags} />
+      </LiSection>
+      <LiSection label="Estructura narrativa">
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {sections.map((s,i) => s.text && (
+            <div key={i} style={{ padding:"10px 14px", background:"white", borderRadius:8, border:"1px solid #eee", borderLeft:"3px solid #007aed" }}>
+              <div style={{ fontSize:10, fontWeight:800, color:"#007aed", textTransform:"uppercase", marginBottom:4 }}>{s.label}</div>
+              <p style={{ margin:0, fontSize:12, color:"#444", lineHeight:1.6 }}>{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </LiSection>
+      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
+    </div>
+  )
+}
+
+function InsightView({ post }: { post: any }) {
+  return (
+    <div>
+      <LiSection label="Hook">
+        <LiText text={post.hook} />
+      </LiSection>
+      <LiSection label="Post completo (listo para copiar)">
+        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"16px 18px" }}>
+          <LiText text={post.post_completo} />
+        </div>
+        <LiHashtags tags={post.hashtags} />
+      </LiSection>
+      {post.puntos_clave?.length > 0 && (
+        <LiSection label="Puntos clave del argumento">
+          <ul style={{ margin:0, paddingLeft:18 }}>
+            {post.puntos_clave.map((p: string, i: number) => (
+              <li key={i} style={{ fontSize:12, color:"#444", marginBottom:4, lineHeight:1.5 }}>{p}</li>
+            ))}
+          </ul>
+        </LiSection>
+      )}
+      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
+    </div>
+  )
+}
+
+function VideoView({ post }: { post: any }) {
+  return (
+    <div>
+      <LiSection label="Titulo del video">
+        <p style={{ margin:0, fontSize:15, fontWeight:700, color:"#0b194f" }}>{post.titulo}</p>
+        <span style={{ fontSize:11, color:"#aaa" }}>{post.duracion_estimada}</span>
+      </LiSection>
+      {post.guion?.length > 0 && (
+        <LiSection label="Guion">
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {post.guion.map((g: any, i: number) => (
+              <div key={i} style={{ padding:"10px 14px", background:"white", borderRadius:8, border:"1px solid #eee", display:"flex", gap:12 }}>
+                <span style={{ fontSize:11, fontWeight:800, color:"#fd7e14", flexShrink:0, minWidth:50 }}>{g.tiempo}</span>
+                <div style={{ flex:1 }}>
+                  <p style={{ margin:"0 0 4px", fontSize:12, color:"#333", lineHeight:1.5 }}>{g.texto}</p>
+                  {g.indicacion && <p style={{ margin:0, fontSize:11, color:"#aaa", fontStyle:"italic" }}>{g.indicacion}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </LiSection>
+      )}
+      <LiSection label="Texto del post">
+        <div style={{ background:"white", border:"1px solid #e0e0e0", borderRadius:8, padding:"14px 16px" }}>
+          <LiText text={post.texto_post} />
+        </div>
+        <LiHashtags tags={post.hashtags} />
+      </LiSection>
+      {post.tip_produccion && (
+        <LiSection label="Tip de produccion">
+          <p style={{ margin:0, fontSize:12, color:"#856404", background:"#fff3cd", padding:"8px 12px", borderRadius:6 }}>{post.tip_produccion}</p>
+        </LiSection>
+      )}
+      <div style={{ fontSize:11, color:"#aaa" }}>Horario sugerido: {post.mejor_horario}</div>
     </div>
   )
 }
