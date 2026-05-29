@@ -830,6 +830,73 @@ export default function SEOCommandCenter() {
                 )
               })
             }
+
+            {/* ── Biblioteca de posts ── */}
+            {linkedinPosts.length > 0 && (
+              <div style={{ marginTop:32 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                  <div>
+                    <h3 style={{ margin:0, color:"#0b194f", fontSize:16, fontWeight:700 }}>Todos los posts generados</h3>
+                    <p style={{ margin:"4px 0 0", color:"#aaa", fontSize:12 }}>{linkedinPosts.length} posts — historial completo</p>
+                  </div>
+                </div>
+                <div style={{ background:"white", borderRadius:12, border:"1px solid #eee", overflow:"hidden" }}>
+                  {/* Header tabla */}
+                  <div style={{ display:"grid", gridTemplateColumns:"100px 1fr 110px 110px 90px", gap:0, padding:"10px 20px", background:"#f8f9fa", borderBottom:"1px solid #eee" }}>
+                    {["Formato","Post","Pagina","Fecha",""].map((h,i) => (
+                      <div key={i} style={{ fontSize:11, fontWeight:700, color:"#aaa", textTransform:"uppercase", letterSpacing:0.5 }}>{h}</div>
+                    ))}
+                  </div>
+                  {linkedinPosts.map((lp, i) => {
+                    const LI_FMTS: Record<string,{label:string;color:string;bg:string}> = {
+                      carousel: { label:"Carrusel", color:"#6f42c1", bg:"#f3eeff" },
+                      historia: { label:"Historia", color:"#007aed", bg:"#e8f4fd" },
+                      insight:  { label:"Insight",  color:"#0d9488", bg:"#e0f7f5" },
+                      video:    { label:"Video",    color:"#fd7e14", bg:"#fff3e8" },
+                    }
+                    const fc = LI_FMTS[lp.format] || { label:lp.format, color:"#aaa", bg:"#f5f5f5" }
+                    const preview = (lp.text||"").split("\n").find((l:string) => l.trim().length > 10) || ""
+                    const srcPage = allPages.find(p => p.id === lp.page_id)
+                    const date = new Date(lp.created_at).toLocaleDateString("es-CO",{day:"2-digit",month:"short"})
+                    return (
+                      <div key={lp.id} style={{
+                        display:"grid", gridTemplateColumns:"100px 1fr 110px 110px 90px",
+                        gap:0, padding:"12px 20px", alignItems:"center",
+                        borderBottom: i < linkedinPosts.length-1 ? "1px solid #f5f5f5" : "none",
+                        background: i%2===0 ? "white" : "#fafafa",
+                      }}>
+                        {/* Formato */}
+                        <div>
+                          <span style={{ fontSize:10, fontWeight:800, padding:"3px 9px", borderRadius:20, background:fc.bg, color:fc.color }}>{fc.label}</span>
+                        </div>
+                        {/* Preview */}
+                        <div style={{ minWidth:0, paddingRight:12 }}>
+                          <p style={{ margin:0, fontSize:12, color:"#333", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {preview.substring(0,120)}{preview.length>120?"...":""}
+                          </p>
+                          {lp.page_url && (
+                            <a href={lp.page_url} target="_blank" rel="noopener" style={{ fontSize:10, color:"#0077b5", textDecoration:"none" }}>
+                              {lp.page_url.replace("https://wetracking.co","wetracking.co")}
+                            </a>
+                          )}
+                        </div>
+                        {/* Pagina */}
+                        <div style={{ fontSize:11, color:"#666", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {srcPage ? srcPage.keyword : lp.keyword}
+                        </div>
+                        {/* Fecha */}
+                        <div style={{ fontSize:11, color:"#aaa" }}>{date}</div>
+                        {/* Acciones */}
+                        <div style={{ display:"flex", gap:5 }}>
+                          <button onClick={()=>setLiModal(lp)} style={{ ...BTN_BLUE, padding:"5px 10px", fontSize:11, background:"#0077b5" }}>Ver</button>
+                          <button onClick={async()=>{await fetch("/api/linkedin",{method:"DELETE",headers:jsonHdr,body:JSON.stringify({id:lp.id})});loadData()}} style={{ ...BTN_DEL, padding:"5px 8px", fontSize:11 }}>x</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
