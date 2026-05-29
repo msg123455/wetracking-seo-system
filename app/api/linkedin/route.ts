@@ -12,87 +12,105 @@ const FORMAT_LABELS: Record<string, string> = {
 }
 
 function buildPrompt(format: string, keyword: string, pageType: string, contentSnippet: string, pageUrl?: string): string {
-  const linkLine = pageUrl
-    ? `\n- Al final del post, ANTES de los hashtags, incluye exactamente esta línea: "Lee el artículo completo: ${pageUrl}"`
-    : ""
+  const ctaLine = pageUrl
+    ? `${pageUrl}`
+    : "https://wetracking.co"
 
   const context = `
 CONTEXTO DE LA EMPRESA:
-WeTracking es una empresa colombiana especializada en trazabilidad y tecnología RFID para cadenas de suministro en Latinoamérica. Trabajan con empresas de manufactura, logística, retail y agroindustria. Su propuesta de valor: visibilidad total del inventario y activos en tiempo real.
+WeTracking es una empresa colombiana especializada en trazabilidad y tecnología RFID para cadenas de suministro en Latinoamérica. Trabajan con empresas de manufactura, logística, retail y agroindustria.
 
-REGLAS DEL POST (OBLIGATORIAS):
-- Idioma: español latinoamericano, tono consultivo y directo. NUNCA corporativo ni vendedor.${linkLine}
+ESTRATEGIA DEL POST — MUY IMPORTANTE:
+El objetivo de este post es llevar tráfico a la página web de WeTracking.
+El post es el TRAILER, la página es la PELICULA.
+- Da suficiente valor para generar confianza y curiosidad.
+- NO des toda la información — deja que la página responda en profundidad.
+- El CTA final siempre cierra con la URL de la página como destino concreto.
+
+REGLAS OBLIGATORIAS:
+- Idioma: español latinoamericano, tono consultivo y directo. NUNCA corporativo ni vendedor.
 - PROHIBIDO: "Estamos orgullosos", "Nos complace", "Soluciones integrales", "De la mano de"
 - Empieza directo con el gancho. Sin saludos ni presentaciones.
-- Usa saltos de línea para facilitar la lectura en móvil (párrafos cortos).
+- Párrafos cortos, saltos de línea entre ideas (lectura móvil).
 - Menciona WeTracking máximo 2 veces, de forma natural.
-- Termina con una pregunta o invitación a comentar.
-- Incluye 4-5 hashtags relevantes al final.
-- PROHIBIDO el guion largo (—).`
+- PROHIBIDO el guion largo (—).
+- El CTA FINAL debe ser la última línea antes de los hashtags, exactamente así:
+  "Conoce todos los detalles aquí: ${ctaLine}"
+- Hashtags: 4-5 al final, en la última línea.`
 
   const contentBlock = `
-CONTENIDO DE LA PÁGINA SEO (usa estos datos reales en el post):
+CONTENIDO DE LA PÁGINA (extrae los puntos clave, no lo copies literal):
 ${contentSnippet}`
 
   const formats: Record<string, string> = {
     carousel: `${context}
 ${contentBlock}
 
-Genera el COPY COMPLETO de un post de LinkedIn tipo CARRUSEL sobre: "${keyword}"
+Genera el COPY de un post de LinkedIn tipo CARRUSEL sobre: "${keyword}"
 
-El post tiene dos partes:
-1. CAPTION (texto del post): 3-4 párrafos cortos. Hook potente, presenta el problema, anuncia que el carrusel lo resuelve, termina con pregunta.
-2. SLIDES (contenido de cada lámina): lista numerada de 7 láminas con título + 1-2 líneas de contenido cada una. La lámina 1 es portada, la última es CTA.
+PARTE 1 — CAPTION DEL POST (texto que aparece sobre el carrusel):
+- Hook de 1-2 líneas que plantea el problema o dato sorprendente.
+- 1-2 párrafos que presentan el tema con un insight clave de la página.
+- Anuncia que el carrusel muestra solo los puntos principales — la guía completa está en la página.
+- CTA con URL.
+- Hashtags.
 
-Escribe TODO el copy listo para usar. Sin JSON, sin etiquetas, sin explicaciones. Solo el texto.`,
+PARTE 2 — SLIDES DEL CARRUSEL (7 láminas):
+- Lámina 1 (portada): título impactante + subtítulo de 1 línea.
+- Láminas 2-6: cada una con 1 título corto + 1-2 líneas de contexto. Cada lámina es UN punto clave de la página, no el desarrollo completo.
+- Lámina 7 (CTA): "¿Quieres profundizar? Guía completa en: ${ctaLine}"
+
+Escribe TODO listo para usar. Sin JSON, sin etiquetas. Solo el texto.`,
 
     historia: `${context}
 ${contentBlock}
 
-Genera el COPY COMPLETO de un post de LinkedIn tipo HISTORIA / CASO DE ÉXITO sobre: "${keyword}"
+Genera el COPY de un post de LinkedIn tipo HISTORIA / CASO DE ÉXITO sobre: "${keyword}"
 
-Estructura narrativa (todo en texto corrido, sin subtítulos):
-- Línea 1-2: Hook fuerte (resultado inesperado o momento de crisis)
-- Párrafo 1: Situación inicial de la empresa cliente (sector, sin nombre, Colombia/LATAM)
-- Párrafo 2: El problema específico con datos concretos
-- Párrafo 3: Cómo WeTracking lo resolvió
-- Párrafo 4: Resultado medible (%, tiempo, dinero)
-- Línea final: Lección + pregunta para comentarios
-- Hashtags
+Estructura (texto corrido, sin subtítulos):
+- Línea 1-2: Hook con el resultado final (genera intriga sobre cómo llegaron ahí).
+- Párrafo 1: Situación inicial de empresa cliente (sector, sin nombre, Colombia/LATAM). El problema específico con dato concreto.
+- Párrafo 2: Qué intentaron antes sin éxito. Por qué fallaba.
+- Párrafo 3: Qué cambió al implementar la solución. Sin detallar el "cómo" técnico — ese está en la página.
+- Párrafo 4: Resultado medible (%, tiempo, dinero). Solo 1-2 números concretos.
+- CTA: "¿Cómo lo hicieron exactamente? Lo explicamos paso a paso aquí: ${ctaLine}"
+- Hashtags.
 
-Escribe TODO el copy listo para pegar en LinkedIn. Sin JSON, sin etiquetas. Solo el texto del post.`,
+Solo el texto del post.`,
 
     insight: `${context}
 ${contentBlock}
 
-Genera el COPY COMPLETO de un post de LinkedIn tipo INSIGHT / OPINIÓN sobre: "${keyword}"
+Genera el COPY de un post de LinkedIn tipo INSIGHT / OPINIÓN sobre: "${keyword}"
 
 Estructura (texto corrido):
-- Línea 1-2: Declaración audaz o contraintuitiva que genere curiosidad
-- Párrafo 1: Por qué la mayoría lo hace diferente (el error común)
-- Párrafo 2: La perspectiva de WeTracking con argumento concreto y dato
-- Párrafo 3: Consecuencia práctica para empresas colombianas/latam
-- Cierre: Reflexión + pregunta abierta para debate
-- Hashtags
+- Línea 1-2: Declaración audaz o dato contraintuitivo extraído de la página.
+- Párrafo 1: El error que comete la mayoría. Por qué pasa.
+- Párrafo 2: El enfoque correcto según la página, con 1 dato o ejemplo concreto. No expliques todo — da el principio, no el método completo.
+- Párrafo 3: Consecuencia práctica para empresas en Colombia/LATAM si aplican esto.
+- CTA: "Analizamos esto en profundidad con datos reales aquí: ${ctaLine}"
+- Hashtags.
 
-Escribe TODO el copy listo para pegar en LinkedIn. Sin JSON, sin etiquetas. Solo el texto del post.`,
+Solo el texto del post.`,
 
     video: `${context}
 ${contentBlock}
 
-Genera el COPY COMPLETO de un script de video de LinkedIn (45-75 segundos) sobre: "${keyword}"
+Genera el COPY de un script de video LinkedIn (45-60 segundos) sobre: "${keyword}"
 
-Estructura:
 SCRIPT DEL VIDEO:
-[0-5s] texto que se dice en cámara para el gancho
-[5-20s] texto del problema
-[20-45s] texto de la solución con ejemplo
-[45-65s] cierre y CTA suave
+[0-5s] Hook visual/verbal: pregunta o dato que detenga el scroll.
+[5-15s] Presenta el problema real que enfrenta el espectador. 1-2 oraciones.
+[15-35s] Da 1 insight concreto de la página — suficiente para que vea que sabes, no suficiente para que no necesite ir a la página.
+[35-50s] "Cubrimos esto en detalle, con ejemplos y casos reales, en el artículo de WeTracking. El link está en el caption."
+[50-60s] Pregunta al espectador para generar comentarios.
 
-TEXTO DEL POST (caption que acompaña el video):
-2-3 párrafos cortos + hashtags
+CAPTION DEL POST (acompaña el video):
+- 2 párrafos: contexto del tema + por qué importa.
+- CTA: "Artículo completo con todos los detalles: ${ctaLine}"
+- Hashtags.
 
-Escribe TODO listo para usar. Sin JSON, sin etiquetas adicionales. Solo el script y el caption.`,
+Solo el script y el caption.`,
   }
 
   return formats[format] || formats.insight
